@@ -59,3 +59,44 @@ fixes. Also the scene table (`notes/scene_table.md`) as a full-screen
 graphic: four planned experiments, all defined in meters and m/s, lattice
 numbers all derived.
 
+---
+
+## 2026-07-13 — Phase 0.5: the 3D pivot
+
+Decision (user): the tunnel goes 3D. Lattice becomes **D3Q19** (19
+velocities; D3Q27's better rotational isotropy isn't worth 216 B/cell vs
+152 B/cell on a 16 GB card at our Reynolds numbers).
+
+**What survives untouched:** `lbm/units.py`, all 25 of its tests, and both
+guard rails — the Reynolds triangle is dimension-blind, and c_s^2 = 1/3
+for D3Q19 exactly as for D2Q9. The units-first bet paid off on day one.
+
+**What the third dimension costs (the honest arithmetic):**
+
+- Memory per cell: 72 -> 152 B (fp32 A-B double buffer), and every scene
+  gains a span factor. The 16 GB card, not taste, now sizes every grid.
+- Cylinder: D = 40 -> 30 cells (the spec floor), domain 30D x 15D with a
+  3D periodic span -> 900 x 450 x 90 = 36.5M cells, 5.5 GB of populations.
+  Physics justification for the short span: at Re = 100 the wake is
+  two-dimensional (mode-A instability onsets near Re ~ 190), so the 2D
+  St/Cd validation bands remain the honest reference.
+- Airfoil: chord 400 -> 200 cells, spanwise-periodic section with span
+  0.2c -> 1600 x 1000 x 40 = 64M cells, 9.7 GB. Consequence to state up
+  front: BL thickness ~ c/sqrt(Re) ~ 1.4 cells (was ~2.8 in the 2D plan),
+  so expect Cd overprediction to worsen; the Cl(alpha) slope comparison vs
+  XFOIL stays the primary metric. Upside: a spanwise-periodic 3D section
+  at Re = 20k is *more* physical than a strict 2D simulation, which
+  over-organizes the separated shear layer.
+- Cavity and channel become spanwise-periodic 3D (nz = 16). At Re = 100
+  neither has a spanwise instability, so the Ghia tables and the analytic
+  parabola remain valid references — and each doubles as a "3D code must
+  reproduce 2D physics where physics IS 2D" test.
+- Phase 4 ceiling moves: 152 B/cell/step at ~960 GB/s is a ~6.3 GLUPS
+  roof (was ~13 for D2Q9). Target restated: >= 2 GLUPS sustained on the
+  cylinder grid.
+- Phase 7 browser toy, if reached, stays 2D — WebGPU + laptop GPUs.
+
+**Renderer consequence:** vorticity becomes a tensor; Phase 1 renders the
+omega_z mid-span slice (identical read to the 2D plan), and Phase 3 gains
+the genuinely-3D shots (Q-criterion isosurfaces are now on the table).
+

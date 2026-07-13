@@ -22,17 +22,35 @@ class SceneError(ValueError):
     """A scene file is missing or malformed."""
 
 
+# D3Q19, fp32, A-B double buffer: 19 populations x 4 bytes x 2 buffers.
+# This is the working set that must fit in the RTX 5080's 16 GB.
+BYTES_PER_CELL_AB = 19 * 4 * 2
+
+
 @dataclass(frozen=True)
 class Scene:
     name: str
     description: str
     units: LatticeUnits
-    nx: int          # grid width  [cells]
+    nx: int          # grid length, streamwise [cells]
     ny: int          # grid height [cells]
+    nz: int          # grid span, periodic [cells]
     raw: dict        # full config dict; solver phases consume the rest
 
+    @property
+    def cells(self) -> int:
+        return self.nx * self.ny * self.nz
+
+    @property
+    def vram_gb(self) -> float:
+        """f-population working set (A-B fp32 D3Q19) in GB — the budget."""
+        return self.cells * BYTES_PER_CELL_AB / 1e9
+
     def report(self) -> str:
-        grid = f"  grid       {self.nx} x {self.ny} = {self.nx * self.ny:,} cells"
+        grid = (
+            f"  grid       {self.nx} x {self.ny} x {self.nz}"
+            f" = {self.cells:,} cells   (~{self.vram_gb:.2f} GB f-populations)"
+        )
         return self.units.report(title=self.name) + "\n" + grid
 
 
@@ -65,6 +83,7 @@ def load_scene(name: str) -> Scene:
         )
         nx = round(dom["length_chars"] * lat["cells_per_char"])
         ny = round(dom["height_chars"] * lat["cells_per_char"])
+        nz = round(dom["span_chars"] * lat["cells_per_char"])
     except KeyError as e:
         raise SceneError(f"{path.name}: missing required key {e}") from e
 
@@ -74,5 +93,6 @@ def load_scene(name: str) -> Scene:
         units=units,
         nx=nx,
         ny=ny,
+        nz=nz,
         raw=cfg,
     )

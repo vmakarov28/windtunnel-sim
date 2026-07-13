@@ -22,7 +22,10 @@ lattice quantities
 and this module solves for the third, via the lattice viscosity relation
 (Kruger et al., "The Lattice Boltzmann Method", 2017, eq. 4.17):
 
-    nu_lat = c_s^2 * (tau - 1/2),   c_s^2 = 1/3  for D2Q9
+    nu_lat = c_s^2 * (tau - 1/2),   c_s^2 = 1/3  for D3Q19 (and D2Q9)
+
+Everything here is dimension-agnostic: the Reynolds triangle and both
+guard rails are identical in 2D and 3D.
 
 Hard limits (the whole point of this module)
 --------------------------------------------
@@ -40,7 +43,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-# Lattice speed of sound for D2Q9 (Kruger et al. 2017, table 3.1).
+# Lattice speed of sound for D3Q19 (Kruger et al. 2017, table 3.1).
 CS2 = 1.0 / 3.0
 CS = math.sqrt(CS2)
 

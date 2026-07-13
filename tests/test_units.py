@@ -78,21 +78,21 @@ def test_mach_number():
 # --- the guard rails -----------------------------------------------------
 
 def test_refuses_tau_below_bgk_floor():
-    # Airfoil-scene numbers: Re = 20k, 400 cells, u = 0.1 -> tau = 0.506.
+    # Airfoil-scene numbers: Re = 20k, 200-cell chord, u = 0.1 -> tau = 0.503.
     with pytest.raises(UnitError, match="below the plain-BGK floor"):
-        resolve(length_m=0.1, velocity_ms=3.0, cells=400, u_lat=0.1)
+        resolve(length_m=0.1, velocity_ms=3.0, cells=200, u_lat=0.1)
 
 
 def test_sgs_floor_admits_the_airfoil_scene():
-    u = resolve(length_m=0.1, velocity_ms=3.0, cells=400, u_lat=0.1, sgs=True)
-    assert u.tau == pytest.approx(0.506)
+    u = resolve(length_m=0.1, velocity_ms=3.0, cells=200, u_lat=0.1, sgs=True)
+    assert u.tau == pytest.approx(0.503)
     assert u.sgs
 
 
 def test_sgs_floor_still_refuses_tau_at_half():
     # tau -> 0.5 exactly means zero viscosity: refused even with SGS.
     with pytest.raises(UnitError, match="below the SGS floor"):
-        resolve(length_m=0.1, velocity_ms=3.0, cells=400, u_lat=1e-4, sgs=True)
+        resolve(length_m=0.1, velocity_ms=3.0, cells=200, u_lat=1e-4, sgs=True)
 
 
 def test_tau_exactly_at_floor_is_allowed():

@@ -1,8 +1,13 @@
 # Lid-driven cavity at Re = 100 — Phase 2 benchmark #2.
 # Centerline profiles compared against Ghia, Ghia & Shin (1982).
+# 3D note: the cavity is spanwise-periodic. At Re = 100 no spanwise
+# instability exists (Taylor-Goertler vortices onset far above this), so
+# the converged mid-plane flow IS the 2D solution and the Ghia tables
+# remain the valid reference. Doubles as a "3D code reproduces 2D physics
+# when it should" check.
 name: cavity_re100
 description: >
-  Square lid-driven cavity at Re = 100, 256x256.
+  Square lid-driven cavity at Re = 100, 256x256 in-plane, periodic span.
   Characteristic length = cavity side; characteristic velocity = lid speed.
 
 physical:
@@ -11,15 +16,16 @@ physical:
   nu_m2s: 1.5e-5
 
 lattice:
-  cells_per_char: 256      # the canonical 256x256 grid
+  cells_per_char: 256      # the canonical 256x256 in-plane grid
   u_lat: 0.1               # -> tau = 1.268; at the Ma ceiling but steady flow
 
 domain:
   length_chars: 1          # the cavity IS the domain
   height_chars: 1
+  span_chars: 0.0625       # nz = 16, periodic; span size is irrelevant at Re 100
 
 sgs: false
 
 boundaries:
   lid: top                 # moving-lid bounce-back on top wall (Phase 2)
-  walls: bounce_back       # other three sides
+  walls: bounce_back       # other three sides; span stays periodic

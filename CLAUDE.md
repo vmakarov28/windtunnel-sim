@@ -1,8 +1,10 @@
 # Project conventions (read before touching anything)
 
-2D GPU lattice-Boltzmann wind tunnel for a YouTube dev-log episode.
+3D GPU lattice-Boltzmann wind tunnel (D3Q19) for a YouTube dev-log episode.
 Built in phases (0–7); STOP for the user's approval after each phase.
 Target machine: RTX 5080 16 GB (Blackwell, sm_120), WSL2 Ubuntu on Win 11.
+(Was 2D/D2Q9 through Phase 0; user pivoted to 3D — see NOTES.md 2026-07-13.
+Phase 7 browser toy, if reached, stays 2D.)
 
 ## Non-negotiable rules
 
@@ -24,7 +26,11 @@ Target machine: RTX 5080 16 GB (Blackwell, sm_120), WSL2 Ubuntu on Win 11.
 - Rendering is headless-first: PNG frames + ffmpeg. No interactive-window
   dependencies in the core path.
 - Performance changes never merge until the Phase 2 validation gates
-  (Poiseuille < 1% L2, Ghia cavity < 3%, cylinder St/Cd bands) re-pass.
+  (Poiseuille < 1% L2, Ghia cavity < 3% on the mid-plane of the
+  spanwise-periodic cavity, cylinder St/Cd bands) re-pass.
+- VRAM discipline: scenes must keep the fp32 A-B population working set
+  (152 B/cell) <= 12 GB (tested in tests/test_scenes.py). Phase 4 ceiling
+  on this card is ~6.3 GLUPS; target >= 2 GLUPS on the cylinder grid.
 - Core kernels stay readable and explainable on camera: physics comments
   with equation references. Keep a readable reference implementation next
   to any clever optimization.
@@ -33,10 +39,12 @@ Target machine: RTX 5080 16 GB (Blackwell, sm_120), WSL2 Ubuntu on Win 11.
 
 ## Phase status
 
-- Phase 0 (scaffold + units): done — tag `v0.0-scaffold`.
-- Phase 1 (D2Q9 PyTorch core): next, pending user approval.
+- Phase 0 (scaffold + units): done — tag `v0.0-scaffold` (2D at the time).
+- Phase 0.5 (3D pivot, user-directed): done — scenes/budgets re-derived.
+- Phase 1 (D3Q19 PyTorch core): approved, in progress.
 - Phases 2–7: validation gauntlet → cinematography → fused-kernel port →
-  Smagorinsky SGS → MH45 airfoil sweep vs XFOIL → (stretch) WebGPU toy.
+  Smagorinsky SGS → MH45 spanwise-periodic section sweep vs XFOIL →
+  (stretch) WebGPU toy (2D).
 
 ## Practicalities
 
