@@ -2,14 +2,14 @@
 """Entry point for every run: python run.py --scene <name> --seed <n>.
 
 All experiments are reproducible from scene config + seed alone.
-Phase 0: loads the scene, resolves and prints its unit system, and exits.
-The solver arrives in Phase 1.
+With --steps 0 (default) this only prints the resolved unit system.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+import time
 
 from lbm.config import SceneError, list_scenes, load_scene
 from lbm.units import UnitError
@@ -17,13 +17,28 @@ from lbm.units import UnitError
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="2D GPU lattice-Boltzmann wind tunnel"
+        description="3D GPU lattice-Boltzmann wind tunnel (D3Q19)"
     )
     parser.add_argument("--scene", help="scene name (a file in scenes/)")
     parser.add_argument("--seed", type=int, help="RNG seed (required for runs)")
-    parser.add_argument(
-        "--list-scenes", action="store_true", help="list available scenes"
-    )
+    parser.add_argument("--steps", type=int, default=0,
+                        help="time steps to run (0 = just report units)")
+    parser.add_argument("--frame-every", type=int, default=50,
+                        help="render a vorticity frame every N steps")
+    parser.add_argument("--guard-every", type=int, default=100,
+                        help="run NaN/velocity/mass guards every N steps")
+    parser.add_argument("--checkpoint-every", type=int, default=0,
+                        help="save a checkpoint every N steps (0 = end only)")
+    parser.add_argument("--out", default=None,
+                        help="output dir (default out/<scene>-seed<seed>)")
+    parser.add_argument("--device", default="auto",
+                        choices=["auto", "cuda", "cpu"])
+    parser.add_argument("--resume", default=None,
+                        help="checkpoint .pt to restore before running")
+    parser.add_argument("--no-ramp", action="store_true",
+                        help="impulsive start: skip the inlet velocity ramp "
+                             "(one deliberate failure-reel run, then never again)")
+    parser.add_argument("--list-scenes", action="store_true")
     args = parser.parse_args(argv)
 
     if args.list_scenes:
@@ -40,9 +55,68 @@ def main(argv: list[str] | None = None) -> int:
 
     print(scene.report())
     print(f"  seed       {args.seed}")
-    if scene.description:
-        print(f"\n{scene.description}")
-    print("\nPhase 0: units + scaffold only. The D2Q9 solver arrives in Phase 1.")
+    if args.steps <= 0:
+        print("\n(no --steps given: units report only)")
+        return 0
+
+    # Solver imports live here so the units path works without torch.
+    import torch  # noqa: F401
+    from lbm.render import FrameWriter
+    from lbm.solver import SimulationBlowup, Solver, capture_failure
+
+    solver = Solver.from_scene(scene, seed=args.seed, device=args.device,
+                               ramp=not args.no_ramp)
+    print(f"  device     {solver.device}"
+          + (" (IMPULSIVE START — no inlet ramp)" if args.no_ramp else ""))
+
+    from pathlib import Path
+    out = Path(args.out or f"out/{scene.name}-seed{args.seed}")
+    frames = FrameWriter(out / "frames")
+    log_path = out / "guards.csv"
+    out.mkdir(parents=True, exist_ok=True)
+    log = open(log_path, "a", encoding="utf-8")
+    if log.tell() == 0:
+        log.write("step,u_max,mass_drift\n")
+
+    if args.resume:
+        solver.restore(args.resume)
+        print(f"  resumed    step {solver.step_count} from {args.resume}")
+
+    t0, steps_done, cells = time.perf_counter(), 0, scene.cells
+    try:
+        for _ in range(args.steps):
+            solver.step()
+            steps_done += 1
+            n = solver.step_count
+            if args.guard_every and n % args.guard_every == 0:
+                g = solver.check_guards()  # raises SimulationBlowup
+                log.write(f"{n},{g['u_max']:.5f},{g['mass_drift']:.3e}\n")
+                log.flush()
+                if g["u_max"] > 0.3:
+                    print(f"  WARNING step {n}: u_max = {g['u_max']:.3f}")
+            if args.frame_every and n % args.frame_every == 0:
+                frames.write(solver)
+            if args.checkpoint_every and n % args.checkpoint_every == 0:
+                solver.checkpoint(out / f"checkpoint_{n:08d}.pt")
+            if n % 500 == 0:
+                dt_wall = time.perf_counter() - t0
+                mlups = cells * steps_done / dt_wall / 1e6
+                print(f"  step {n:>7}  {mlups:8.1f} MLUPS  "
+                      f"{frames.count} frames", flush=True)
+    except SimulationBlowup as e:
+        dest = capture_failure(solver, str(e), frames_dir=frames.dir)
+        print(f"\nBLOWUP: {e}\ncaptured to {dest} — this is footage.",
+              file=sys.stderr)
+        log.close()
+        return 3
+
+    solver.checkpoint(out / "final.pt")
+    log.close()
+    dt_wall = time.perf_counter() - t0
+    print(f"\ndone: {steps_done} steps, {frames.count} frames, "
+          f"{cells * steps_done / dt_wall / 1e6:.1f} MLUPS sustained")
+    print(f"assemble: ffmpeg -framerate 60 -i {frames.dir}/frame_%06d.png "
+          f"-c:v libx264 -pix_fmt yuv420p -crf 18 {out}/{scene.name}.mp4")
     return 0
 
 

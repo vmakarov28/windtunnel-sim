@@ -3,7 +3,7 @@ name = "windtunnel-sim"
 version = "0.0.1"
 description = "2D GPU lattice-Boltzmann wind tunnel (D2Q9), built for a dev-log video"
 requires-python = ">=3.10"
-dependencies = ["pyyaml", "numpy"]
+dependencies = ["pyyaml", "numpy", "torch", "matplotlib"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
