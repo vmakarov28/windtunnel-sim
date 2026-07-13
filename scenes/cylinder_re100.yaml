@@ -1,0 +1,33 @@
+# Circular cylinder at Re = 100 — the vortex-street workhorse.
+# Validation targets (Phase 2): St in [0.155, 0.175], mean Cd in [1.25, 1.45].
+name: cylinder_re100
+description: >
+  Karman vortex street behind a circular cylinder at Re = 100.
+  Characteristic length = cylinder diameter.
+
+physical:
+  char_length_m: 0.05      # cylinder diameter D [m]
+  velocity_ms: 0.03        # freestream U [m/s]  ->  Re = U*D/nu = 100
+  nu_m2s: 1.5e-5           # air
+
+lattice:
+  cells_per_char: 40       # D = 40 cells (>= 30 required for Phase 1 demo)
+  u_lat: 0.06              # -> tau = 0.572 via units.resolve()
+
+domain:
+  length_chars: 30         # 30 D  ->  nx = 1200
+  height_chars: 15         # 15 D  ->  ny = 600; blockage D/H = 6.7% < 8%
+
+sgs: false
+
+boundaries:
+  inlet: equilibrium_ramp     # ramped over ramp_steps (Phase 1)
+  outlet: zero_gradient_sponge
+  top_bottom: periodic
+  ramp_steps: 2000
+  sponge_fraction: 0.08       # last 8% of domain ramps viscosity up
+
+obstacle:
+  type: cylinder
+  center_x_chars: 8.0         # 8 D from inlet -> 22 D of wake to watch
+  center_y_chars: 7.5         # vertical center

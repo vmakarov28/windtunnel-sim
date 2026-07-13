@@ -1,0 +1,27 @@
+# Body-force-driven plane Poiseuille flow — Phase 2 benchmark #1.
+# Converged profile vs the analytic parabola u(y) = g*y*(H-y)/(2*nu).
+name: channel_poiseuille
+description: >
+  Plane channel flow driven by a uniform body force, periodic streamwise.
+  Characteristic length = channel height; characteristic velocity = target
+  centerline maximum (the body force is derived from it in Phase 2).
+
+physical:
+  char_length_m: 0.01      # channel height H [m]
+  velocity_ms: 0.048       # target centerline u_max [m/s]  ->  Re = 32
+  nu_m2s: 1.5e-5
+
+lattice:
+  cells_per_char: 64       # H = 64 cells
+  u_lat: 0.05              # -> tau = 0.8, comfortably stable and accurate
+
+domain:
+  length_chars: 4          # nx = 256; periodic, so length is cosmetic
+  height_chars: 1          # ny = 64
+
+sgs: false
+
+boundaries:
+  streamwise: periodic
+  top_bottom: bounce_back
+  drive: body_force        # force magnitude derived from u_max in Phase 2

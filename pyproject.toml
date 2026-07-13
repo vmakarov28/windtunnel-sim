@@ -1,0 +1,13 @@
+[project]
+name = "windtunnel-sim"
+version = "0.0.1"
+description = "2D GPU lattice-Boltzmann wind tunnel (D2Q9), built for a dev-log video"
+requires-python = ">=3.10"
+dependencies = ["pyyaml", "numpy"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

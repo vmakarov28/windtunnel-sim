@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# run outputs — regenerate from scene + seed, don't version
+out/
+frames/
+failures/
+checkpoints/
+*.mp4
+*.mov
+
+# validation figures ARE committed (validation/*.png is not ignored)

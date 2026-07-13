@@ -1,0 +1,25 @@
+# Lid-driven cavity at Re = 100 — Phase 2 benchmark #2.
+# Centerline profiles compared against Ghia, Ghia & Shin (1982).
+name: cavity_re100
+description: >
+  Square lid-driven cavity at Re = 100, 256x256.
+  Characteristic length = cavity side; characteristic velocity = lid speed.
+
+physical:
+  char_length_m: 0.05      # cavity side L [m]
+  velocity_ms: 0.03        # lid speed U [m/s]  ->  Re = 100
+  nu_m2s: 1.5e-5
+
+lattice:
+  cells_per_char: 256      # the canonical 256x256 grid
+  u_lat: 0.1               # -> tau = 1.268; at the Ma ceiling but steady flow
+
+domain:
+  length_chars: 1          # the cavity IS the domain
+  height_chars: 1
+
+sgs: false
+
+boundaries:
+  lid: top                 # moving-lid bounce-back on top wall (Phase 2)
+  walls: bounce_back       # other three sides
