@@ -1,0 +1,4 @@
+# This repo is edited from both Windows and WSL2 — keep everything LF.
+* text=auto eol=lf
+*.png binary
+*.mp4 binary
