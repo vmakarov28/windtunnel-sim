@@ -214,3 +214,50 @@ measurement is implemented and unlocks the Phase 2 cylinder gate.
 the MLUPS counter climbing in the run log; side-by-side of the 3D
 symmetric wake vs the 2D street (same physics, one missing trigger).
 
+---
+
+## 2026-07-13 — Phase 2: the validation gauntlet
+
+**Gate 1, Poiseuille: PASS.** L2 = 0.082% vs the analytic parabola
+(gate < 1%), converged to a bitwise-steady state. Halfway bounce-back +
+Guo forcing behaving like the second-order methods they are.
+Figure: validation/poiseuille.png.
+
+**Gate 2, Ghia cavity: PASS.** Max deviation 0.44% (u-centerline),
+0.67% (v-centerline) against Ghia, Ghia & Shin (1982), gate < 3%.
+Two honest notes: (a) my from-memory transcription of Ghia Table II had
+three phantom rows and drifted digits — caught by checking against a
+published transcription before trusting the gate; reference data needs
+provenance like everything else. (b) The 1e-8 convergence criterion was
+never reached (stopped at the 600k-step cap, delta ~ 1e-5) — at tau =
+1.268 the cavity's corner eddies creep for a long time; the centerline
+profiles were long settled. Figure: validation/cavity.png.
+
+**Gate 3, cylinder: FAILED FIRST, then diagnosed.** First run: St =
+0.1481 (band 0.155-0.175), Cd = 1.251, Cl amplitude 0.116. That Cl
+amplitude is the tell — literature says ~0.33 at Re = 100. A 20k-step
+transient put the 45k-step measurement window inside the street's GROWTH
+phase: a still-growing wake oscillates below the saturated limit-cycle
+frequency and drags both St and mean Cd down. Phase 1's own footage
+shows saturation near t* ~ 90-100. Fix: measure after an 80k-step
+transient (t* = 120). No constants touched — the physics was fine; the
+stopwatch was early.
+
+**Gate 3, second run: PASS.** St = 0.1667 (Williamson's curve fit gives
+~0.164 at Re = 100 — we land 1.6% over, consistent with confinement),
+Cd = 1.436 ± 0.008 (high side of the band, as expected at 6.7% blockage:
+confinement adds a few percent drag), Cl amplitude 0.361 — the saturated
+limit cycle, confirming the first run's diagnosis. Momentum-exchange
+forces are officially born and validated. Figure: validation/cylinder.png.
+
+**Phase 2 verdict: all three gates pass. The tunnel is calibrated.**
+Nothing downstream (performance, turbulence model, airfoil) starts from
+an unvalidated core, and any future change must re-pass these three
+scripts before it merges.
+
+Bonus unblocked: MH45 coordinates (67-point Selig loop, "MH 45 9.85%")
+transcribed into assets/mh45.dat from the UIUC Airfoil Data Site with
+provenance in the header — the Phase 6 loader already passes its tests
+against an analytic NACA section, welded-trailing-edge rasterization
+included.
+

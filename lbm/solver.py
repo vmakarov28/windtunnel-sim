@@ -154,6 +154,19 @@ class Solver:
                 self._lid_corr[q] = 6.0 * W[q] * E[q][0] * self.lid_velocity
         self._solid_idx = self.mask.reshape(-1).nonzero(as_tuple=False).squeeze(1)
 
+        # Obstacle-only boundary links for the momentum-exchange force
+        # measurement (walls and lid excluded — we weigh the model, not
+        # the wind tunnel). Enabled on demand: set measure_force = True.
+        self.measure_force = False
+        self.last_force: torch.Tensor | None = None   # (2,) on device
+        self._force_idx: list[torch.Tensor | None] = [None] * Q
+        if obstacle_mask is not None:
+            obs = obstacle_mask.cpu().to(self.device)
+            for q in range(1, Q):
+                up_obs = torch.roll(obs, shifts=E[q], dims=(0, 1)) & ~self.mask
+                idx = up_obs.reshape(-1).nonzero(as_tuple=False).squeeze(1)
+                self._force_idx[q] = idx if idx.numel() else None
+
         # -- initial condition: equilibrium + seeded noise -----------------
         # Open scenes start at the (ramped) inlet velocity; closed boxes at
         # rest. Tiny seeded noise breaks the wake's metastable symmetry so
@@ -293,6 +306,22 @@ class Solver:
                 f2[q].view(-1)[lidx] += self._lid_corr[q]
         if self._solid_idx.numel():
             f2.view(Q, -1)[:, self._solid_idx] = 0.0  # solids hold no fluid
+
+        # 4b. momentum-exchange force on the obstacle (Kruger eq. 5.51):
+        # each boundary link transfers e_qbar * (f*_qbar + f_q_bounced) to
+        # the body, where qbar points into the solid. This is where Cd and
+        # Cl come from — no pressure integration, just counted momentum.
+        if self.measure_force:
+            force = torch.zeros(2, dtype=torch.float32, device=self.device)
+            for q in range(1, Q):
+                idx = self._force_idx[q]
+                if idx is None:
+                    continue
+                qb = OPP[q]  # direction pointing into the obstacle
+                transfer = (f[qb].view(-1)[idx] + f2[q].view(-1)[idx]).sum()
+                force[0] += E[qb][0] * transfer
+                force[1] += E[qb][1] * transfer
+            self.last_force = force
 
         # 5. open boundaries, Zou-He (see module docs). Direction indices:
         #    1:(1,0) 2:(-1,0) 3:(0,1) 4:(0,-1) 5:(1,1) 6:(-1,-1)
