@@ -27,17 +27,40 @@ never set by hand.
 
 ## Layout
 
-- `lbm/` — core solver (units, config; D2Q9 arrives in Phase 1)
+- `lbm/` — core: `units.py` (Reynolds triangle), `solver.py` (readable
+  D2Q9 BGK reference), `fused.py` (Triton kernel), `cinema.py` (tracers/
+  dye/camera), `airfoil.py` (Selig loader + rasterizer)
 - `scenes/` — experiment configs, physical-units-first
-- `scripts/` — run/benchmark/render tooling
-- `validation/` — benchmark gauntlet (Poiseuille, lid-driven cavity, cylinder)
-- `notes/NOTES.md` — dev diary: every bug, instability, and diagnosis, dated
-- `tests/` — `python -m pytest`
+- `scripts/` — run/benchmark/render/sweep tooling
+- `validation/` — benchmark gauntlet (Poiseuille, lid-driven cavity,
+  cylinder) + airfoil polars, all producing publication-style figures
+- `notes/NOTES.md` — dev diary: every bug, instability, and diagnosis,
+  dated (it doubles as the video script)
+- `tests/` — `python -m pytest` (61 tests; CPU on Windows, GPU in WSL2)
 
 ## Milestones
 
-Each phase ends in a git tag; every tag stays runnable.
+Each phase ends in a git tag; every tag stays runnable (they get re-run
+for b-roll).
 
-| tag | phase |
-|---|---|
-| v0.0-scaffold | Phase 0 — scaffold + units discipline |
+| tag | phase | headline result |
+|---|---|---|
+| v0.0-scaffold | 0 — scaffold + units discipline | tau/u_lat guard rails refuse unstable scenes |
+| v0.1-first-flow | 1 — D2Q9 core | Karman vortex street; Zou-He open BCs + anechoic sponge |
+| v0.2-validated | 2 — validation gauntlet | Poiseuille 0.08%, Ghia 0.67%, cylinder St 0.167 / Cd 1.44 |
+| v0.3-cinema | 3 — cinematography | tracers, streaklines, dye, camera |
+| v0.4-fused | 4 — fused Triton kernel | 10.8 GLUPS, 81% of the bandwidth ceiling |
+| v0.5-sgs | 5 — Smagorinsky LES | stable to Re=50k (52M cells), k⁻³ wake spectra |
+| v0.6-airfoil | 6 — MH45 airfoil sweep | lift slope 6.76/rad (within 8% of 2π) |
+
+Phase 7 (WebGPU browser toy) is a stretch goal, gated on separate
+approval. A 3D D3Q19 implementation lives on the `3d-d3q19` branch and
+resumes after the 2D program.
+
+## Honesty policy
+
+No constant is ever fudged to pass a benchmark. Failed validations and
+instabilities (four of them: an impulsive-start pressure wave, a Zou-He
+staggered-mode blowup, a local-Mach violation in separated flow, and a
+too-early force measurement) were each captured, diagnosed, and fixed by
+finding the cause — the full autopsies are in `notes/NOTES.md`.
