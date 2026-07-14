@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WebGPU Wind Tunnel — D2Q9 lattice-Boltzmann</title>
+<style>
+  :root { --bg:#0e1116; --panel:#161b22; --ink:#e6edf3; --muted:#9aa7b4;
+          --accent:#4c8dff; --line:#243040; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  header { padding:14px 20px; border-bottom:1px solid var(--line);
+           display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; font-weight:650; letter-spacing:.2px; }
+  header .sub { color:var(--muted); font-size:12.5px; }
+  header a { color:var(--accent); text-decoration:none; }
+  header a:hover { text-decoration:underline; }
+  main { display:flex; gap:16px; padding:16px 20px; align-items:flex-start;
+         flex-wrap:wrap; }
+  .stage { flex:1 1 720px; min-width:320px; }
+  canvas { width:100%; aspect-ratio:2/1; border:1px solid var(--line);
+           border-radius:8px; background:#f7f7f7; cursor:crosshair;
+           touch-action:none; display:block; }
+  #readout { margin-top:8px; color:var(--muted); font-variant-numeric:tabular-nums;
+             font-size:12.5px; }
+  #status { margin-top:4px; color:var(--muted); font-size:12px; }
+  #status.err { color:#ff7b72; }
+  .panel { flex:0 0 260px; background:var(--panel); border:1px solid var(--line);
+           border-radius:10px; padding:14px 16px; }
+  .row { margin:12px 0; }
+  .row:first-child { margin-top:0; }
+  label { display:block; color:var(--muted); font-size:12px; margin-bottom:5px; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  select, button { font:inherit; color:var(--ink); background:#1f2632;
+                   border:1px solid var(--line); border-radius:7px;
+                   padding:7px 10px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; }
+  .check { display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .hint { color:var(--muted); font-size:12px; margin-top:10px;
+          border-top:1px solid var(--line); padding-top:10px; }
+  kbd { background:#1f2632; border:1px solid var(--line); border-radius:4px;
+        padding:0 5px; font-size:11px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>WebGPU Wind Tunnel</h1>
+  <span class="sub">
+    fp32 D2Q9 lattice-Boltzmann + Smagorinsky LES, one compute shader ·
+    the browser-toy sibling of the
+    <a href="https://github.com/vmakarov28/windtunnel-sim">windtunnel-sim</a>
+    dev-log</span>
+</header>
+<main>
+  <div class="stage">
+    <canvas id="view"></canvas>
+    <div id="readout"></div>
+    <div id="status">initializing WebGPU…</div>
+  </div>
+  <div class="panel">
+    <div class="row">
+      <label for="speed">Wind speed (u, lattice units)</label>
+      <input type="range" id="speed" min="0.02" max="0.09" step="0.005" value="0.06" />
+    </div>
+    <div class="row">
+      <label for="visc">Viscosity ν  (lower = higher Re, more turbulent)</label>
+      <input type="range" id="visc" min="0.0006" max="0.02" step="0.0002" value="0.004" />
+    </div>
+    <div class="row">
+      <label for="mode">Field</label>
+      <select id="mode">
+        <option value="vorticity">Vorticity (diverging)</option>
+        <option value="speed">Speed (magnitude)</option>
+      </select>
+    </div>
+    <div class="row check">
+      <input type="checkbox" id="tracers" checked />
+      <label for="tracers" style="margin:0">Passive tracers</label>
+    </div>
+    <div class="row">
+      <label for="brush">Obstacle brush size</label>
+      <input type="range" id="brush" min="3" max="40" step="1" value="16" />
+    </div>
+    <div class="row btns">
+      <button id="pause">Pause</button>
+      <button id="clear">Clear obstacles</button>
+      <button id="reset">Reset flow</button>
+    </div>
+    <div class="hint">
+      <b>Draw</b> obstacles with the mouse. <kbd>Shift</kbd> or right-drag
+      to erase. Flow enters from the left; wakes are absorbed by a sponge
+      before the right edge, so an empty tunnel stays calm.
+    </div>
+  </div>
+</main>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

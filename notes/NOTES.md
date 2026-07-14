@@ -507,3 +507,47 @@ Cd(alpha) polars with error bars; the alpha-6 vorticity + dye beauty
 clips over the section (out/airfoil_a6_*); and, when the user's XFOIL
 data arrives, the overlay reveal.
 
+---
+
+## 2026-07-14 — Phase 7: the WebGPU browser toy (approved)
+
+The stretch goal, user-approved. A feature-frozen in-browser wind tunnel:
+the same fp32 D2Q9 BGK + Smagorinsky kernel, ported to ONE WebGPU compute
+shader (WGSL), fixed 1024x512, mouse-drawn obstacles, vorticity + tracer
+rendering, static-page deploy. Lives in `web/`, links back to the repo.
+
+**Design choices carried over from the hard-won Python lessons:**
+- Equilibrium velocity inlet + anechoic sponge, NOT Zou-He. The Phase 5
+  autopsy showed Zou-He grows a staggered mode at low viscosity; an
+  equilibrium (Dirichlet) inlet has no non-equilibrium mode to grow, and
+  the sponge pins the outlet so the domain can't pressurize (the Phase 1
+  bug). Simplest robust choice for an interactive toy where the user can
+  draw pathological geometry.
+- Smagorinsky always on (Cs = 0.15), so cranking the viscosity slider
+  down to high-Re stays stable instead of blowing up in someone's tab.
+- A-B double buffer with a PERSISTENT ping-pong counter — a per-frame
+  index desyncs the swap on odd frames (caught in review before it ran).
+
+**Verification without a browser (the honest part).** The in-app browser
+preview was unavailable this session, so I verified the toy the way the
+rest of the project is verified — by running the real thing and checking
+physics, headless, via wgpu-py (the SAME Naga validator Chrome ships):
+1. All four shaders compile. This immediately caught a real bug: `macro`
+   is a reserved word in WGSL — renamed to `vel`. A browser would have
+   surfaced the same error later; the headless validator surfaced it in
+   seconds.
+2. The step kernel RUNS on the GPU and passes the same gates as
+   tests/test_solver.py: empty tunnel holds freestream to 4 decimals
+   (max|ux-U| = 0.0000, max|uy| = 0.0000), and a cylinder accelerates the
+   flow to 1.4x freestream and sheds a wake. Scripts: web/validate_wgsl.py,
+   web/validate_step.py.
+   Still pending (needs a WebGPU browser, classifier was down): the visual
+   confirmation of the render + tracer passes. Those compile and are
+   feedback-free; the physics — the part that can be wrong in subtle ways
+   — is GPU-verified.
+
+**Footage:** screen-capture of drawing an obstacle and watching the street
+form live; the viscosity slider ramping from laminar to turbulent in real
+time; a split of the browser toy next to the Python beauty clip of the
+same flow — "the exact same kernel, one in CUDA, one in your tab."
+

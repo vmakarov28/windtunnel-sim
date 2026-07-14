@@ -52,7 +52,8 @@ for b-roll).
 | v0.4-fused | 4 — fused Triton kernel | 10.8 GLUPS, 81% of the bandwidth ceiling |
 | v0.5-sgs | 5 — Smagorinsky LES | stable to Re=50k (52M cells), k⁻³ wake spectra |
 | v0.6-airfoil | 6 — MH45 airfoil sweep | lift slope 6.76/rad (within 8% of 2π) |
+| v0.7-webgpu | 7 — WebGPU browser toy | the same kernel in one WGSL compute shader ([`web/`](web/)) |
 
-Phase 7 (WebGPU browser toy) is a stretch goal, gated on separate
-approval. A 3D D3Q19 implementation lives on the `3d-d3q19` branch and
-resumes after the 2D program.
+The [`web/`](web/) toy runs the same D2Q9 BGK+Smagorinsky kernel in the
+browser — draw obstacles with the mouse. A 3D D3Q19 implementation lives
+on the `3d-d3q19` branch and resumes next.

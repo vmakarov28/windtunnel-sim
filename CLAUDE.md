@@ -63,7 +63,11 @@ A-A vs A-B streaming patterns for Phase 4.
   (staircase + ~3-cell BL), stall untrusted. Polars + verdict table +
   staircase figure + beauty clips. XFOIL overlay auto-appears when the
   user drops data/xfoil_mh45_re20k.csv (alpha,cl,cd) — review-time step.
-- Phase 7 (WebGPU browser toy): stretch, NEEDS SEPARATE USER APPROVAL.
+- Phase 7 (WebGPU browser toy): done — tag `v0.7-webgpu`. Single WGSL
+  compute shader (D2Q9 BGK+SGS) in `web/`, mouse-drawn obstacles,
+  vorticity + tracers, GitHub Pages deploy workflow. Verified headless via
+  wgpu-py (shaders compile; step kernel holds freestream + sheds a wake).
+  Live browser render confirmation still pending (preview was down).
 
 ## Practicalities
 
