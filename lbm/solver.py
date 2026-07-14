@@ -11,8 +11,12 @@ One time step (Kruger et al. 2017, ch. 3-5):
        f_q^eq = w_q rho (1 + 3(e.u) + 4.5(e.u)^2 - 1.5 u^2)       (eq. 3.54)
   3. streaming       f_q(x + e_q, t+1) = f_q(x, t)      -> torch.roll
   4. halfway bounce-back at solids                                (eq. 5.26)
-  5. inlet (equilibrium, ramped) and outlet (zero-gradient + viscosity
-     sponge over the last 8% of the domain)
+  5. equilibrium velocity inlet (ramped) + an ANECHOIC forcing sponge over
+     the last 8% of the domain that blends toward the clean freestream
+     (absorbs wakes AND acoustics, pins the outlet pressure). This
+     replaced the original viscosity-sponge + copy-outlet, which
+     pressurized the box and left the wake on the non-shedding symmetric
+     branch — see the 2D program's open-boundary autopsy in NOTES.
 
 Memory layout: f has shape (19, nx, ny, nz), fp32. All ops are per-
 direction loops over q so peak temporaries stay ~2 scalar fields, not 19.
@@ -58,7 +62,7 @@ class Solver:
         inlet_outlet: bool = True,      # False -> fully periodic box
         ramp_steps: int = 2000,         # inlet ramp; 0 = impulsive start
         sponge_fraction: float = 0.08,  # of nx, before the outlet
-        sponge_tau_max: float = 1.5,    # viscosity ramps up to this tau
+        sponge_strength: float = 0.15,  # peak anechoic blend rate
         wall_y: bool = False,           # bounce-back walls at y=0, y=ny-1
         init_noise: float = 1e-3,       # *u_char, seeds the shedding asymmetry
         scene_name: str = "adhoc",
@@ -72,18 +76,25 @@ class Solver:
         self.ramp_steps = ramp_steps
         self.scene_name = scene_name
 
-        # -- relaxation rate, with outlet sponge -------------------------
-        # omega = 1/tau, spatially varying along x: the last sponge_fraction
-        # of the domain smoothly raises viscosity (tau -> sponge_tau_max) to
-        # damp vortices before they hit the outlet and reflect.
-        tau_x = torch.full((nx,), self.tau, dtype=torch.float32)
+        self.omega = 1.0 / self.tau
+
+        # -- anechoic sponge (ported from the 2D program, NOTES 2026-07-13/14)
+        # A velocity inlet + open outlet is an acoustically closed
+        # resonator; the OLD 3D code used a viscosity-ramp sponge, which
+        # does nothing for sound and (with a fixed-rho inlet + copy outlet)
+        # let the domain pressurize to rho~1.06 and slowed the flow ~12% —
+        # the run settled on the unstable symmetric branch and never shed.
+        # Fix: force the last sponge_fraction of the tunnel toward the clean
+        # freestream feq(1, u_in) with a smoothly rising strength (the
+        # numerical foam wedge). Absorbs vortices AND sound, and pins the
+        # outlet pressure so nothing pressurizes.
+        self._n_sp = 0
         if inlet_outlet and sponge_fraction > 0:
-            n_sp = max(2, round(nx * sponge_fraction))
-            s = torch.linspace(0.0, 1.0, n_sp)          # 0 .. 1 into sponge
-            ramp = 0.5 - 0.5 * torch.cos(math.pi * s)   # smooth C1 ramp
-            tau_x[nx - n_sp:] = self.tau + (max(sponge_tau_max, self.tau)
-                                            - self.tau) * ramp
-        self.omega = (1.0 / tau_x).to(self.device).view(nx, 1, 1)
+            self._n_sp = max(2, round(nx * sponge_fraction))
+            s = torch.linspace(0.0, 1.0, self._n_sp)
+            self._sponge_sigma = (
+                sponge_strength * s * s              # gentle entry, C1
+            ).to(self.device).view(self._n_sp, 1, 1)
 
         # -- solid mask ---------------------------------------------------
         mask = torch.zeros((nx, ny, nz), dtype=torch.bool)
@@ -192,6 +203,7 @@ class Solver:
 
     def step(self) -> None:
         f, f2 = self.f, self.f2
+        u_in = self.u_char * self._ramp_factor(self.step_count)
 
         # 1+2. collision: relax toward equilibrium, in place, per direction.
         rho, u = self.macroscopics()
@@ -204,11 +216,24 @@ class Solver:
             if ez: cu += ez * u[2]
             cu *= 3.0
             feq = W[q] * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
-            f[q] -= self.omega * (f[q] - feq)   # BGK, omega = 1/tau(x)
+            f[q] -= self.omega * (f[q] - feq)   # BGK, omega = 1/tau
+
+        # 2b. anechoic sponge: blend the last n_sp x-planes toward
+        # feq(rho=1, (u_in, 0, 0)) so wakes and acoustic waves are absorbed
+        # before the outlet (see constructor + NOTES).
+        if self._n_sp:
+            n_sp = self._n_sp
+            for q in range(Q):
+                ex = E[q][0]
+                cu = 3.0 * ex * u_in
+                target = W[q] * (1.0 + cu + 0.5 * cu * cu
+                                 - 1.5 * u_in * u_in)
+                f[q, -n_sp:, :, :] += self._sponge_sigma \
+                    * (target - f[q, -n_sp:, :, :])
 
         # 3. streaming: pull — f2_q(x) = f_q(x - e_q). torch.roll is
-        # periodic in all dims; x-plane wraparound is overwritten by the
-        # inlet/outlet below, y-walls (if any) live in the mask.
+        # periodic in all dims; the inlet plane is overwritten below, the
+        # sponge absorbs at the outlet, y-walls (if any) live in the mask.
         for q in range(Q):
             f2[q] = torch.roll(f[q], shifts=E[q], dims=(0, 1, 2))
 
@@ -221,15 +246,19 @@ class Solver:
         if self._solid_idx.numel():
             f2.view(Q, -1)[:, self._solid_idx] = 0.0  # solids hold no fluid
 
-        # 5. open boundaries.
+        # 5. open boundaries: equilibrium velocity inlet at x=0. No special
+        # outlet — the anechoic sponge above absorbs structures and pins the
+        # outlet pressure, so a fixed-rho inlet no longer pressurizes the
+        # box (the failure autopsied in NOTES). An equilibrium inlet carries
+        # no non-equilibrium mode, so it is robust at low viscosity without
+        # the Zou-He regularization the 2D program needed (a future refine-
+        # ment for quantitative 3D gates).
         if self.inlet_outlet:
-            u_in = self.u_char * self._ramp_factor(self.step_count)
             for q in range(Q):
                 ex = E[q][0]
                 cu = 3.0 * ex * u_in
-                feq_in = W[q] * (1.0 + cu + 0.5 * cu * cu - 1.5 * u_in * u_in)
-                f2[q, 0, :, :] = feq_in           # equilibrium inlet, rho = 1
-            f2[:, -1, :, :] = f2[:, -2, :, :]     # zero-gradient outlet
+                f2[q, 0, :, :] = W[q] * (1.0 + cu + 0.5 * cu * cu
+                                         - 1.5 * u_in * u_in)
 
         # swap A/B buffers
         self.f, self.f2 = f2, f
@@ -237,9 +266,18 @@ class Solver:
 
     # ------------------------------------------------------------------
     def guards(self) -> dict:
-        """Cheap health check: NaN, runaway velocity, mass drift."""
+        """Cheap health check: NaN, runaway velocity, mass drift.
+
+        u_max is measured over the INTERIOR (clear of the inlet/outlet
+        planes) — the original 3D bug hid because the imposed inlet plane
+        WAS the global max, so u_max read exactly u_in while the interior
+        flow was actually slower. A boundary condition must never grade
+        itself (NOTES 2026-07-14)."""
         rho, u = self.macroscopics()
-        u_max = float((u * u).sum(dim=0).max().sqrt())
+        speed2 = (u * u).sum(dim=0)
+        if self.inlet_outlet and self.nx > 8:
+            speed2 = speed2[2:-2, :, :]
+        u_max = float(speed2.max().sqrt())
         mass = float(rho.sum())
         has_nan = bool(torch.isnan(rho).any() or torch.isinf(rho).any()
                        or math.isnan(u_max))

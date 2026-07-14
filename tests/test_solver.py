@@ -113,25 +113,45 @@ def test_checkpoint_roundtrip_bitwise():
     assert ck is Solver
 
 
-def test_inlet_outlet_smoke_mini_cylinder():
-    # Tiny wind tunnel: ramped inlet, sponge outlet, cylinder. Must stay
-    # finite and develop nonzero vorticity downstream of the obstacle.
-    nx, ny, nz = 120, 60, 4
+def test_open_boundaries_hold_freestream_3d():
+    # REGRESSION for the 3D open-boundary bug (NOTES 2026-07-13/14): with an
+    # equilibrium velocity inlet and an anechoic sponge outlet, an EMPTY 3D
+    # tunnel must settle at u = u_in and rho = 1 in the interior. The old
+    # fixed-rho inlet + copy outlet pressurized the box to rho~1.06 and ran
+    # ~12% slow, which is why the cylinder never left the symmetric branch.
+    s = Solver(160, 48, 8, tau=0.7, u_char=0.08, device="cpu",
+               inlet_outlet=True, ramp_steps=150, init_noise=0.0)
+    for _ in range(2500):
+        s.step()
+    rho, u = s.macroscopics()
+    interior_ux = u[0, 10:-14, :, :]        # clear of inlet and sponge
+    interior_rho = rho[10:-14, :, :]
+    assert float((interior_ux - 0.08).abs().max()) < 0.008   # within 1% u
+    assert float((interior_rho - 1.0).abs().max()) < 0.005   # within 0.5%
+    g = s.guards()
+    assert abs(g["u_max"] - 0.08) < 0.008
+
+
+def test_inlet_outlet_cylinder_sheds_wake():
+    # Tiny wind tunnel with an OFFSET cylinder (the shedding trigger): must
+    # stay finite, ACCELERATE the flow around the body (the old run never
+    # did — it ran slow and symmetric), and grow transverse motion in the
+    # wake (the seed of the vortex street).
+    nx, ny, nz = 160, 60, 4
     x = torch.arange(nx, dtype=torch.float32)[:, None] + 0.5
     y = torch.arange(ny, dtype=torch.float32)[None, :] + 0.5
-    mask = ((x - 30.0) ** 2 + (y - 30.5) ** 2 <= 25.0)
+    mask = ((x - 40.0) ** 2 + (y - 28.0) ** 2 <= 36.0)   # r=6, offset down
     mask = mask[:, :, None].expand(nx, ny, nz).clone()
     s = Solver(nx, ny, nz, tau=0.6, u_char=0.08, device="cpu",
                obstacle_mask=mask, inlet_outlet=True, ramp_steps=100,
                seed=1)
-    for _ in range(300):
+    for _ in range(600):
         s.step()
     g = s.check_guards()
     assert not g["has_nan"]
-    assert 0.0 < g["u_max"] < 0.3
+    assert 0.085 < g["u_max"] < 0.3          # flow accelerates past U_in
     _, u = s.macroscopics()
-    # wake asymmetry/vorticity: dv/dx behind the cylinder is nonzero
-    assert float(u[1, 40:80, :, 2].abs().max()) > 1e-4
+    assert float(u[1, 50:110, :, 2].abs().max()) > 1e-3   # wake transverse v
 
 
 def test_guards_catch_nan_and_capture_failure(tmp_path):

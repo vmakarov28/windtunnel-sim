@@ -37,14 +37,22 @@ Phase 7 browser toy, if reached, stays 2D.)
 - Work only in this repo; commit everything to the public GitHub repo
   `windtunnel-sim`.
 
-## Phase status
+## Phase status (this is the 3D D3Q19 branch)
 
-- Phase 0 (scaffold + units): done — tag `v0.0-scaffold` (2D at the time).
-- Phase 0.5 (3D pivot, user-directed): done — scenes/budgets re-derived.
-- Phase 1 (D3Q19 PyTorch core): approved, in progress.
-- Phases 2–7: validation gauntlet → cinematography → fused-kernel port →
-  Smagorinsky SGS → MH45 spanwise-periodic section sweep vs XFOIL →
-  (stretch) WebGPU toy (2D).
+The full 2D program (D2Q9) shipped on `main`: tags v0.0-scaffold ..
+v0.7-webgpu, all validated. This branch resumes 3D, PORTING the fixes the
+2D run discovered rather than re-deriving them. Read NOTES.md on `main`
+for the four autopsies (impulsive wave, Zou-He staggered mode, local-Mach
+violation, pre-saturation measurement) before touching the core.
+
+- Phase 0 / 0.5 / 1 (D3Q19 core): done.
+- Open-boundary fixes ported (2026-07-14): anechoic sponge, equilibrium
+  velocity inlet, interior-only guard, offset-cylinder trigger. Empty 3D
+  tunnel holds freestream + offset cylinder sheds (CPU tests). 46 tests.
+- Next: full GPU cylinder run to confirm a shed 3D street; then the 3D
+  validation gauntlet (spanwise-periodic cavity/channel/cylinder), the
+  fused D3Q19 kernel, SGS, and the spanwise-periodic MH45 section.
+- Zou-He + regularized BCs (for quantitative gates) still to port from 2D.
 
 ## Practicalities
 

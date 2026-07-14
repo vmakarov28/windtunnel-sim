@@ -34,4 +34,7 @@ boundaries:
 obstacle:
   type: cylinder              # z-extruded circle
   center_x_chars: 8.0         # 8 D from inlet -> 22 D of wake to watch
-  center_y_chars: 7.5         # vertical center
+  center_y_chars: 7.3         # 0.2 D below center: deterministic shedding
+                              # trigger (Schaefer-Turek style). The 2D
+                              # program sat on the symmetric steady branch
+                              # for 35k steps without this — see NOTES.

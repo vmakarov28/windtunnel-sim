@@ -132,3 +132,44 @@ Phase 4 kernel will think.
 at t=0 (breaks the wake's metastable symmetry so shedding onsets
 reproducibly). Same seed -> same flow, bit for bit.
 
+---
+
+## 2026-07-14 — 3D resumes: porting the 2D open-boundary fixes
+
+The 2D program (finished on `main`, tags v0.0..v0.7) ran the same open-
+boundary code this branch had and discovered — over three bugs — that it
+was wrong. The very first 3D run on this branch was the smoking gun: a
+35k-step cylinder that produced a PERFECTLY SYMMETRIC wake, never shed,
+and reported u_max = exactly the inlet speed. Autopsy (done in 2D, applies
+identically here): a fixed-rho equilibrium inlet + zero-gradient copy
+outlet lets the whole box pressurize (settled at rho ~ 1.06), which slows
+the flow ~12% and weakens perturbations, so the wake sits on Fornberg's
+unstable steady branch. The global-max guard hid it because the imposed
+inlet plane WAS the max.
+
+Ported the validated fixes to the D3Q19 solver (no new physics invented —
+this is exactly what 2D proved):
+1. **Anechoic forcing sponge** replaces the viscosity-ramp sponge: the
+   last 8% of the tunnel blends f toward feq(1, u_in). A viscosity sponge
+   does nothing for the standing acoustic wave a ramped velocity inlet
+   excites; forcing the state absorbs vortices AND sound and pins the
+   outlet pressure so nothing pressurizes.
+2. **Equilibrium velocity inlet, no copy outlet.** The sponge is the
+   outlet now. (2D uses Zou-He + regularization for quantitative accuracy;
+   an equilibrium inlet carries no non-equilibrium mode so it is robust at
+   low viscosity without regularization — Zou-He is a future refinement
+   for the 3D quantitative gates.)
+3. **Interior-only guard** — a boundary condition must never grade itself.
+4. **Offset cylinder** (center_y 7.5 D -> 7.3 D): a deterministic shedding
+   trigger so the street onsets instead of waiting on roundoff to break a
+   perfect mirror symmetry (the other half of why the first run never
+   shed).
+
+**Verified on small CPU grids** (the architecture, not the 36.5M-cell GPU
+run): an empty 3D tunnel now holds u = 0.0800 and rho = 1.000 in the
+interior (test_open_boundaries_hold_freestream_3d), and an offset cylinder
+ACCELERATES the flow past u_in and grows transverse wake velocity
+(test_inlet_outlet_cylinder_sheds_wake) — the two things the original run
+provably failed. 46 tests pass. Next: the full GPU cylinder run to confirm
+a shed street, then the 3D validation gauntlet.
+
