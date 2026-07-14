@@ -66,8 +66,10 @@ A-A vs A-B streaming patterns for Phase 4.
 - Phase 7 (WebGPU browser toy): done — tag `v0.7-webgpu`. Single WGSL
   compute shader (D2Q9 BGK+SGS) in `web/`, mouse-drawn obstacles,
   vorticity + tracers, GitHub Pages deploy workflow. Verified headless via
-  wgpu-py (shaders compile; step kernel holds freestream + sheds a wake).
-  Live browser render confirmation still pending (preview was down).
+  wgpu-py (shaders compile; step kernel holds freestream + sheds a wake)
+  AND runs live in a real WebGPU browser (all pipelines built, loop
+  running). Only a pixel screenshot is unavailable (WebGPU canvas can't be
+  captured by the in-app browser).
 
 ## Practicalities
 

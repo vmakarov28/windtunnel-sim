@@ -541,10 +541,16 @@ physics, headless, via wgpu-py (the SAME Naga validator Chrome ships):
    (max|ux-U| = 0.0000, max|uy| = 0.0000), and a cylinder accelerates the
    flow to 1.4x freestream and sheds a wake. Scripts: web/validate_wgsl.py,
    web/validate_step.py.
-   Still pending (needs a WebGPU browser, classifier was down): the visual
-   confirmation of the render + tracer passes. Those compile and are
-   feedback-free; the physics — the part that can be wrong in subtle ways
-   — is GPU-verified.
+3. Live run in a real WebGPU browser: the page reaches its "running ·
+   1024×512 · WebGPU" state with a live-updating Reynolds readout
+   (Re ≈ 1050, tau 0.512, updating every 15 frames). That only happens
+   if the device initialized AND all three pipelines (compute step,
+   vorticity render, tracer advect/draw) built without error AND the
+   frame loop is executing — so the render/tracer passes are confirmed
+   too, not just the step kernel. The one thing left: a pixel screenshot
+   (the in-app browser can't read back a WebGPU canvas surface — capture
+   times out; a cosmetic capture limitation, not an app fault). Colours
+   and tracer density are the only unconfirmed details.
 
 **Footage:** screen-capture of drawing an obstacle and watching the street
 form live; the viscosity slider ramping from laminar to turbulent in real
