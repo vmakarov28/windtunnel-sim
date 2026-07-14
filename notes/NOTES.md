@@ -100,3 +100,35 @@ for D3Q19 exactly as for D2Q9. The units-first bet paid off on day one.
 omega_z mid-span slice (identical read to the 2D plan), and Phase 3 gains
 the genuinely-3D shots (Q-criterion isosurfaces are now on the table).
 
+---
+
+## 2026-07-13 — Phase 1: D3Q19 core in PyTorch
+
+Solver is live: BGK collision, pull streaming via `torch.roll`, halfway
+bounce-back (Kruger eq. 5.26) over precomputed boundary-link indices,
+ramped equilibrium inlet, zero-gradient outlet behind a cosine viscosity
+sponge, guards (NaN -> failure capture, u_max, mass drift logged), bitwise
+checkpoint/restore, and the omega_z mid-plane renderer.
+
+**Physics gates that passed before any GPU touched this code:**
+
+- Taylor-Green vortex decay matches the exact Navier-Stokes solution
+  exp(-2 nu k^2 t) within 2% — this single test exercises collision,
+  streaming, AND nu = (tau - 1/2)/3, i.e. the whole units story.
+- Uniform flow is a fixed point of collide+stream to fp32 roundoff
+  (the equilibrium moments are exact, so any drift = a bug).
+- Halfway bounce-back conserves mass to < 1e-5 relative over 200 steps.
+- Checkpoint -> restore -> continue is BITWISE identical to never
+  stopping (CPU determinism; the b-roll re-run guarantee).
+
+**Design choice worth explaining on camera:** bounce-back is not a field
+operation but a gather over precomputed flat indices of boundary links
+(fluid cells whose upstream neighbor is solid). For the cylinder that's
+~10^4 links out of 36.5M cells — the boundary is a 2D skin on a 3D
+volume, and treating it as such is both faster and closer to how the
+Phase 4 kernel will think.
+
+**Seeding:** the only stochastic element is a 1e-3 * u_lat velocity noise
+at t=0 (breaks the wake's metastable symmetry so shedding onsets
+reproducibly). Same seed -> same flow, bit for bit.
+
