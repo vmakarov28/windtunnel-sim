@@ -261,3 +261,39 @@ provenance in the header — the Phase 6 loader already passes its tests
 against an analytic NACA section, welded-trailing-edge rasterization
 included.
 
+---
+
+## 2026-07-13 — Phase 3: cinematography (v0.3-cinema)
+
+Three clips delivered, all from the SAME physics checkpoint (the 80k-step
+cylinder state — reproducibility doubles as a b-roll factory):
+
+1. `out/cylinder_re100-seed0/vortex_street.mp4` — 33 s full-domain
+   vorticity (from Phase 1).
+2. `out/clip_streaklines/streaklines_closeup.mp4` — 8 s, 300k tracers,
+   RK2 advection, 3x-upscaled zoom on the cylinder.
+3. `out/clip_dye/dye_plume.mp4` — 10 s smoke-plume shot: semi-Lagrangian
+   dye ribbon rolling up into the vortex cores.
+
+Two cinematography bugs, both "the camera saw nothing" class:
+
+- First streakline render was PURE BLACK. Tracer lifetime (1200 steps)
+  was shorter than the transit from the inlet respawn band to the zoom
+  region (u = 0.06 -> 72 cells of travel; camera at x = 200+). Particles
+  died en route, forever. Lifetime now auto-scales to 2x domain transit.
+  Locked in as a test: the buffer must light up in every quarter of the
+  domain.
+- First dye plume died 60 cells from the source: a 0.999/step decay
+  e-folds in 1000 steps. Decay budget is now < 5% per domain transit
+  (also a test).
+
+One accidental aesthetic, kept: the streakline buffer renders
+ink-on-paper rather than glow-on-dark — uniform freestream saturates the
+accumulation buffer while the diverging wake thins it. It reads like a
+schlieren etching and it is staying.
+
+Also in this commit (Phase 4 groundwork, gates still to run): the fused
+Triton collide+stream kernel (lbm/fused.py), correctness-gate and
+benchmark scripts, --solver fused and --overlay-mlups in run.py.
+Toolchain verified: Triton 3.6.0 compiles and runs on sm_120.
+

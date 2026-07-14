@@ -38,6 +38,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-ramp", action="store_true",
                         help="impulsive start: skip the inlet velocity ramp "
                              "(one deliberate failure-reel run, then never again)")
+    parser.add_argument("--preset", default=None,
+                        choices=["vorticity", "speed", "dye", "streaklines"],
+                        help="render preset (default: scene render.preset "
+                             "or vorticity)")
+    parser.add_argument("--zoom", default=None,
+                        help="camera crop x0,y0,x1,y1 in characteristic "
+                             "lengths (e.g. 6,5,14,10)")
+    parser.add_argument("--upscale", type=int, default=1,
+                        help="integer pixel upscale of the output frames")
+    parser.add_argument("--tracers", type=int, default=300_000,
+                        help="particle count for the streaklines preset")
+    parser.add_argument("--overlay-mlups", action="store_true",
+                        help="burn a live MLUPS counter into the frames")
+    parser.add_argument("--solver", default="reference",
+                        choices=["reference", "fused"],
+                        help="reference = readable PyTorch; fused = Triton")
     parser.add_argument("--list-scenes", action="store_true")
     args = parser.parse_args(argv)
 
@@ -61,17 +77,37 @@ def main(argv: list[str] | None = None) -> int:
 
     # Solver imports live here so the units path works without torch.
     import torch  # noqa: F401
-    from lbm.render import FrameWriter
+    from lbm.cinema import CinemaWriter, Dye, StreaklineBuffer, Tracers
     from lbm.solver import SimulationBlowup, Solver, capture_failure
 
-    solver = Solver.from_scene(scene, seed=args.seed, device=args.device,
-                               ramp=not args.no_ramp)
+    if args.solver == "fused":
+        from lbm.fused import FusedSolver as SolverCls
+    else:
+        SolverCls = Solver
+    solver = SolverCls.from_scene(scene, seed=args.seed, device=args.device,
+                                  ramp=not args.no_ramp)
     print(f"  device     {solver.device}"
           + (" (IMPULSIVE START — no inlet ramp)" if args.no_ramp else ""))
 
+    render_cfg = scene.raw.get("render", {})
+    preset = args.preset or render_cfg.get("preset", "vorticity")
+    zoom = args.zoom or render_cfg.get("zoom")
+    if isinstance(zoom, str):
+        zoom = [float(v) for v in zoom.split(",")]
+    if zoom is not None:  # characteristic lengths -> cells
+        zoom = tuple(v * scene.units.cells for v in zoom)
+
+    extras: dict = {}
+    if preset == "dye":
+        extras["dye"] = Dye(solver)
+    elif preset == "streaklines":
+        extras["tracers"] = Tracers(solver, n=args.tracers, seed=args.seed)
+        extras["streaks"] = StreaklineBuffer(solver)
+
     from pathlib import Path
     out = Path(args.out or f"out/{scene.name}-seed{args.seed}")
-    frames = FrameWriter(out / "frames")
+    frames = CinemaWriter(out / "frames", preset=preset, zoom=zoom,
+                          upscale=args.upscale)
     log_path = out / "guards.csv"
     out.mkdir(parents=True, exist_ok=True)
     log = open(log_path, "a", encoding="utf-8")
@@ -86,6 +122,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         for _ in range(args.steps):
             solver.step()
+            if "dye" in extras:
+                extras["dye"].step(solver)
+            if "tracers" in extras:
+                extras["tracers"].step(solver)
+                extras["streaks"].splat(extras["tracers"])
             steps_done += 1
             n = solver.step_count
             if args.guard_every and n % args.guard_every == 0:
@@ -95,7 +136,13 @@ def main(argv: list[str] | None = None) -> int:
                 if g["u_max"] > 0.3:
                     print(f"  WARNING step {n}: u_max = {g['u_max']:.3f}")
             if args.frame_every and n % args.frame_every == 0:
-                frames.write(solver)
+                text = None
+                if args.overlay_mlups:
+                    mlups = (cells * steps_done
+                             / (time.perf_counter() - t0) / 1e6)
+                    text = (f"{args.solver}: {mlups:,.0f} MLUPS   "
+                            f"{scene.nx}x{scene.ny}   step {n}")
+                frames.write(solver, extras, overlay=text)
             if args.checkpoint_every and n % args.checkpoint_every == 0:
                 solver.checkpoint(out / f"checkpoint_{n:08d}.pt")
             if n % 500 == 0:

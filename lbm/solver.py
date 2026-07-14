@@ -128,6 +128,7 @@ class Solver:
             mask[-1, :] = True
             lid[0, :] = lid[-1, :] = False  # side walls never move
         self.mask = mask.to(self.device)
+        self._lid_mask = lid.to(self.device)   # kept for the fused kernel
         self.fluid_cells = int((~mask).sum())
 
         # Precompute bounce-back link indices (flat, per direction):
