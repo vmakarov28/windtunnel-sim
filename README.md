@@ -56,11 +56,3 @@ for b-roll).
 Phase 7 (WebGPU browser toy) is a stretch goal, gated on separate
 approval. A 3D D3Q19 implementation lives on the `3d-d3q19` branch and
 resumes after the 2D program.
-
-## Honesty policy
-
-No constant is ever fudged to pass a benchmark. Failed validations and
-instabilities (four of them: an impulsive-start pressure wave, a Zou-He
-staggered-mode blowup, a local-Mach violation in separated flow, and a
-too-early force measurement) were each captured, diagnosed, and fixed by
-finding the cause — the full autopsies are in `notes/NOTES.md`.
