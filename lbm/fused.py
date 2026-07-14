@@ -31,14 +31,17 @@ import triton.language as tl
 from .lattice import E, OPP, Q, W
 from .solver import Solver
 
-W0, WA, WD = 4.0 / 9.0, 1.0 / 9.0, 1.0 / 36.0
+# lattice weights as compile-time constants inside the kernel
+W0 = tl.constexpr(4.0 / 9.0)
+WA = tl.constexpr(1.0 / 9.0)
+WD = tl.constexpr(1.0 / 36.0)
 
 
 @triton.jit
 def _step_kernel(
     A, B, MASK, LID, SIG,
-    nx, ny,
-    omega, fx, fy, u_in, u_lid,
+    nx, ny, open_bc,
+    omega, fx, fy, u_in, u_lid, cs2s,
     BLOCK: tl.constexpr,
 ):
     x = tl.program_id(0)
@@ -123,6 +126,23 @@ def _step_kernel(
     refl = tl.load(A + 7 * nxy + here, mask=my, other=0.0)
     f8 = tl.where(ms != 0, refl - ml * 6.0 * WD * u_lid, pulled)
 
+    # -- Zou-He open boundaries, in-kernel (only the edge programs take
+    # these branches; doing this here makes the whole step ONE launch —
+    # the PyTorch-column version cost ~2 ms/step of launch overhead).
+    # Inlet x = 0: velocity imposed, the +x triple (1,5,7) reconstructed.
+    is_in = (x == 0) & (open_bc != 0)
+    is_out = (x == nx - 1) & (open_bc != 0)
+    t_imb = 0.5 * (f3 - f4)                    # transverse imbalance
+    rho_in = (f0 + f3 + f4 + 2.0 * (f2 + f6 + f8)) / (1.0 - u_in)
+    f1 = tl.where(is_in, f2 + (2.0 / 3.0) * rho_in * u_in, f1)
+    f5 = tl.where(is_in, f6 - t_imb + (1.0 / 6.0) * rho_in * u_in, f5)
+    f7 = tl.where(is_in, f8 + t_imb + (1.0 / 6.0) * rho_in * u_in, f7)
+    # Outlet x = nx-1: rho = 1 imposed, the -x triple (2,6,8) reconstructed.
+    u_out = (f0 + f3 + f4 + 2.0 * (f1 + f5 + f7)) - 1.0
+    f2 = tl.where(is_out, f1 - (2.0 / 3.0) * u_out, f2)
+    f6 = tl.where(is_out, f5 + t_imb - (1.0 / 6.0) * u_out, f6)
+    f8 = tl.where(is_out, f7 - t_imb - (1.0 / 6.0) * u_out, f8)
+
     # -- macroscopics (Guo half-force shift) ------------------------------
     rho = f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8
     rho_safe = tl.where(rho > 1e-12, rho, 1.0)
@@ -131,103 +151,102 @@ def _step_kernel(
     usq = ux * ux + uy * uy
     ufdot = ux * fx + uy * fy
     sig = tl.load(SIG + x)
-    omg = omega  # scalar BGK rate; SGS makes this a field in Phase 5
+
+    # -- equilibria (kept in registers, used for Pi_neq AND collision) ----
+    cu1 = 3.0 * ux
+    cu3 = 3.0 * uy
+    cu5 = 3.0 * (ux + uy)
+    cu7 = 3.0 * (ux - uy)
+    feq0 = W0 * rho * (1.0 - 1.5 * usq)
+    feq1 = WA * rho * (1.0 + cu1 + 0.5 * cu1 * cu1 - 1.5 * usq)
+    feq2 = WA * rho * (1.0 - cu1 + 0.5 * cu1 * cu1 - 1.5 * usq)
+    feq3 = WA * rho * (1.0 + cu3 + 0.5 * cu3 * cu3 - 1.5 * usq)
+    feq4 = WA * rho * (1.0 - cu3 + 0.5 * cu3 * cu3 - 1.5 * usq)
+    feq5 = WD * rho * (1.0 + cu5 + 0.5 * cu5 * cu5 - 1.5 * usq)
+    feq6 = WD * rho * (1.0 - cu5 + 0.5 * cu5 * cu5 - 1.5 * usq)
+    feq7 = WD * rho * (1.0 + cu7 + 0.5 * cu7 * cu7 - 1.5 * usq)
+    feq8 = WD * rho * (1.0 - cu7 + 0.5 * cu7 * cu7 - 1.5 * usq)
+
+    # -- Smagorinsky effective relaxation (Hou et al. 1996) ---------------
+    # cs2s = Cs^2; cs2s = 0 reduces EXACTLY to plain BGK (no branch).
+    pxx = (f1 - feq1) + (f2 - feq2) + (f5 - feq5) + (f6 - feq6) \
+        + (f7 - feq7) + (f8 - feq8)
+    pyy = (f3 - feq3) + (f4 - feq4) + (f5 - feq5) + (f6 - feq6) \
+        + (f7 - feq7) + (f8 - feq8)
+    pxy = (f5 - feq5) + (f6 - feq6) - (f7 - feq7) - (f8 - feq8)
+    qbar = tl.sqrt(2.0 * (pxx * pxx + 2.0 * pxy * pxy + pyy * pyy))
+    tau0 = 1.0 / omega
+    tau_eff = 0.5 * (tau0 + tl.sqrt(tau0 * tau0
+                                    + 18.0 * cs2s * qbar / rho_safe))
+    omg = 1.0 / tau_eff
 
     # sponge target: feq(rho=1, (u_in, 0)) — constants per direction
     tusq = u_in * u_in
+    tcu = 3.0 * u_in
+    solid = center_solid != 0
+    gpre = 1.0 - 0.5 * omg
 
     # -- collide + Guo + sponge, then store, direction by direction ------
-    solid = center_solid != 0
-
     # q = 0
-    feq = W0 * rho * (1.0 - 1.5 * usq)
-    guo = (1.0 - 0.5 * omg) * W0 * (3.0 * (-ufdot))
+    guo = gpre * W0 * (3.0 * (-ufdot))
     tgt = W0 * (1.0 - 1.5 * tusq)
-    out = f0 - omg * (f0 - feq) + guo
+    out = f0 - omg * (f0 - feq0) + guo
     out = out + sig * (tgt - out)
     tl.store(B + here, tl.where(solid, 0.0, out), mask=my)
 
-    # axis directions
     # q = 1: e=(1,0)
-    cu = 3.0 * ux
-    feq = WA * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
-    guo = (1.0 - 0.5 * omg) * WA * (3.0 * (fx - ufdot) + 3.0 * cu * fx)
-    tcu = 3.0 * u_in
+    guo = gpre * WA * (3.0 * (fx - ufdot) + 3.0 * cu1 * fx)
     tgt = WA * (1.0 + tcu + 0.5 * tcu * tcu - 1.5 * tusq)
-    out = f1 - omg * (f1 - feq) + guo
+    out = f1 - omg * (f1 - feq1) + guo
     out = out + sig * (tgt - out)
     tl.store(B + 1 * nxy + here, tl.where(solid, 0.0, out), mask=my)
 
     # q = 2: e=(-1,0)
-    cu = -3.0 * ux
-    feq = WA * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
-    guo = (1.0 - 0.5 * omg) * WA * (3.0 * (-fx - ufdot) + 3.0 * cu * (-fx))
-    tcu = -3.0 * u_in
-    tgt = WA * (1.0 + tcu + 0.5 * tcu * tcu - 1.5 * tusq)
-    out = f2 - omg * (f2 - feq) + guo
+    guo = gpre * WA * (3.0 * (-fx - ufdot) - 3.0 * cu1 * (-fx))
+    tgt = WA * (1.0 - tcu + 0.5 * tcu * tcu - 1.5 * tusq)
+    out = f2 - omg * (f2 - feq2) + guo
     out = out + sig * (tgt - out)
     tl.store(B + 2 * nxy + here, tl.where(solid, 0.0, out), mask=my)
 
     # q = 3: e=(0,1)
-    cu = 3.0 * uy
-    feq = WA * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
-    guo = (1.0 - 0.5 * omg) * WA * (3.0 * (fy - ufdot) + 3.0 * cu * fy)
+    guo = gpre * WA * (3.0 * (fy - ufdot) + 3.0 * cu3 * fy)
     tgt = WA * (1.0 - 1.5 * tusq)
-    out = f3 - omg * (f3 - feq) + guo
+    out = f3 - omg * (f3 - feq3) + guo
     out = out + sig * (tgt - out)
     tl.store(B + 3 * nxy + here, tl.where(solid, 0.0, out), mask=my)
 
     # q = 4: e=(0,-1)
-    cu = -3.0 * uy
-    feq = WA * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
-    guo = (1.0 - 0.5 * omg) * WA * (3.0 * (-fy - ufdot) + 3.0 * cu * (-fy))
+    guo = gpre * WA * (3.0 * (-fy - ufdot) - 3.0 * cu3 * (-fy))
     tgt = WA * (1.0 - 1.5 * tusq)
-    out = f4 - omg * (f4 - feq) + guo
+    out = f4 - omg * (f4 - feq4) + guo
     out = out + sig * (tgt - out)
     tl.store(B + 4 * nxy + here, tl.where(solid, 0.0, out), mask=my)
 
-    # diagonals
     # q = 5: e=(1,1)
-    cu = 3.0 * (ux + uy)
-    feq = WD * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
-    guo = (1.0 - 0.5 * omg) * WD * (3.0 * (fx + fy - ufdot)
-                                    + 3.0 * cu * (fx + fy))
-    tcu = 3.0 * u_in
+    guo = gpre * WD * (3.0 * (fx + fy - ufdot) + 3.0 * cu5 * (fx + fy))
     tgt = WD * (1.0 + tcu + 0.5 * tcu * tcu - 1.5 * tusq)
-    out = f5 - omg * (f5 - feq) + guo
+    out = f5 - omg * (f5 - feq5) + guo
     out = out + sig * (tgt - out)
     tl.store(B + 5 * nxy + here, tl.where(solid, 0.0, out), mask=my)
 
     # q = 6: e=(-1,-1)
-    cu = -3.0 * (ux + uy)
-    feq = WD * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
-    guo = (1.0 - 0.5 * omg) * WD * (3.0 * (-fx - fy - ufdot)
-                                    + 3.0 * cu * (-fx - fy))
-    tcu = -3.0 * u_in
-    tgt = WD * (1.0 + tcu + 0.5 * tcu * tcu - 1.5 * tusq)
-    out = f6 - omg * (f6 - feq) + guo
+    guo = gpre * WD * (3.0 * (-fx - fy - ufdot) - 3.0 * cu5 * (-fx - fy))
+    tgt = WD * (1.0 - tcu + 0.5 * tcu * tcu - 1.5 * tusq)
+    out = f6 - omg * (f6 - feq6) + guo
     out = out + sig * (tgt - out)
     tl.store(B + 6 * nxy + here, tl.where(solid, 0.0, out), mask=my)
 
     # q = 7: e=(1,-1)
-    cu = 3.0 * (ux - uy)
-    feq = WD * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
-    guo = (1.0 - 0.5 * omg) * WD * (3.0 * (fx - fy - ufdot)
-                                    + 3.0 * cu * (fx - fy))
-    tcu = 3.0 * u_in
+    guo = gpre * WD * (3.0 * (fx - fy - ufdot) + 3.0 * cu7 * (fx - fy))
     tgt = WD * (1.0 + tcu + 0.5 * tcu * tcu - 1.5 * tusq)
-    out = f7 - omg * (f7 - feq) + guo
+    out = f7 - omg * (f7 - feq7) + guo
     out = out + sig * (tgt - out)
     tl.store(B + 7 * nxy + here, tl.where(solid, 0.0, out), mask=my)
 
     # q = 8: e=(-1,1)
-    cu = 3.0 * (-ux + uy)
-    feq = WD * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
-    guo = (1.0 - 0.5 * omg) * WD * (3.0 * (-fx + fy - ufdot)
-                                    + 3.0 * cu * (-fx + fy))
-    tcu = -3.0 * u_in
-    tgt = WD * (1.0 + tcu + 0.5 * tcu * tcu - 1.5 * tusq)
-    out = f8 - omg * (f8 - feq) + guo
+    guo = gpre * WD * (3.0 * (-fx + fy - ufdot) - 3.0 * cu7 * (-fx + fy))
+    tgt = WD * (1.0 - tcu + 0.5 * tcu * tcu - 1.5 * tusq)
+    out = f8 - omg * (f8 - feq8) + guo
     out = out + sig * (tgt - out)
     tl.store(B + 8 * nxy + here, tl.where(solid, 0.0, out), mask=my)
 
@@ -251,6 +270,10 @@ class FusedSolver(Solver):
         if self._n_sp:
             sig[self.nx - self._n_sp:] = self._sponge_sigma.cpu().squeeze(1)
         self._sig_x = sig.to(self.device)
+        # plain floats for the two BC columns: a float(tensor) here would
+        # force a GPU->CPU sync EVERY step (~0.2 ms on WSL2 — measured as
+        # the dominant cost of the first benchmark)
+        self._sig_col = (float(sig[0]), float(sig[-1]))
         self.f = self.f.contiguous()
         self.f2 = self.f2.contiguous()
         if self.inlet_outlet:
@@ -278,60 +301,12 @@ class FusedSolver(Solver):
         grid = (self.nx, triton.cdiv(self.ny, self.BLOCK))
         _step_kernel[grid](
             a, b, self._mask_u8, self._lid_u8, self._sig_x,
-            self.nx, self.ny,
+            self.nx, self.ny, int(self.inlet_outlet),
             self.omega, self.force[0], self.force[1],
             u_in, self.lid_velocity,
+            self.cs_smag ** 2 if self.sgs else 0.0,
             BLOCK=self.BLOCK,
         )
-        if self.inlet_outlet:
-            self._fix_boundary_columns(a, b, u_in)
         self.f, self.f2 = b, a
         self.step_count += 1
 
-    # ------------------------------------------------------------------
-    def _fix_boundary_columns(self, a: torch.Tensor, b: torch.Tensor,
-                              u_in: float) -> None:
-        """Redo columns 0 and nx-1 in PyTorch: pull, Zou-He, collide.
-
-        Two columns out of nx — the subtle boundary code stays in one
-        place (the reference implementation) conceptually; this mirrors
-        it on the post-collision convention."""
-        nx, ny = self.nx, self.ny
-        for col in (0, nx - 1):
-            g = torch.empty((Q, ny), dtype=torch.float32, device=self.device)
-            for q in range(Q):
-                ex, ey = E[q]
-                g[q] = torch.roll(a[q, (col - ex) % nx, :], shifts=ey, dims=0)
-            if col == 0:
-                rho_in = (g[0] + g[3] + g[4]
-                          + 2.0 * (g[2] + g[6] + g[8])) / (1.0 - u_in)
-                t = 0.5 * (g[3] - g[4])
-                g[1] = g[2] + (2.0 / 3.0) * rho_in * u_in
-                g[5] = g[6] - t + (1.0 / 6.0) * rho_in * u_in
-                g[7] = g[8] + t + (1.0 / 6.0) * rho_in * u_in
-            else:
-                u_out = (g[0] + g[3] + g[4]
-                         + 2.0 * (g[1] + g[5] + g[7])) - 1.0
-                t = 0.5 * (g[3] - g[4])
-                g[2] = g[1] - (2.0 / 3.0) * u_out
-                g[6] = g[5] + t - (1.0 / 6.0) * u_out
-                g[8] = g[7] - t - (1.0 / 6.0) * u_out
-            # collide + sponge (no obstacle cells in these columns)
-            rho = g.sum(dim=0)
-            ux = g[1] - g[2] + g[5] - g[6] + g[7] - g[8]
-            uy = g[3] - g[4] + g[5] - g[6] - g[7] + g[8]
-            rho_safe = torch.where(rho > 1e-12, rho, torch.ones_like(rho))
-            ux, uy = ux / rho_safe, uy / rho_safe
-            usq = ux * ux + uy * uy
-            sig = float(self._sig_x[col])
-            for q in range(Q):
-                ex, ey = E[q]
-                cu = 3.0 * (ex * ux + ey * uy)
-                feq = W[q] * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
-                out = g[q] - self.omega * (g[q] - feq)
-                if sig > 0.0:
-                    tcu = 3.0 * ex * u_in
-                    tgt = W[q] * (1.0 + tcu + 0.5 * tcu * tcu
-                                  - 1.5 * u_in * u_in)
-                    out = out + sig * (tgt - out)
-                b[q, col, :] = out

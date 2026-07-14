@@ -297,3 +297,59 @@ Triton collide+stream kernel (lbm/fused.py), correctness-gate and
 benchmark scripts, --solver fused and --overlay-mlups in run.py.
 Toolchain verified: Triton 3.6.0 compiles and runs on sm_120.
 
+---
+
+## 2026-07-14 — Phase 4: the fused kernel (v0.4-fused)
+
+**The number: 10.8 GLUPS at 2048x1024 — 81% of the bandwidth ceiling,
+12x the PyTorch reference on the same grid, 3.6x past the >= 3 GLUPS
+target.** The ceiling math, stated up front and scored against: D2Q9
+fp32 A-B is 72 B/cell/step of compulsory DRAM traffic; at ~960 GB/s
+that is ~13.3 GLUPS. One kernel does pull-streaming + halfway
+bounce-back + Zou-He + BGK/Smagorinsky collision + Guo forcing + the
+anechoic sponge.
+
+Honest wrinkle in the small-grid numbers: 512^2 to 1024^2 report
+110-240% "of ceiling" — not a measurement error. Their whole working
+set (18-72 MB) fits in the RTX 5080's 64 MB L2 cache, so DRAM stops
+being the wall. The ceiling is a DRAM ceiling; score against it only
+when the grid actually spills to DRAM (2048x1024 up: 76-81%).
+
+Design story worth telling (three benchmark rounds):
+1. Round 1: fused SLOWER than the reference at small grids (0.5x), 11%
+   of ceiling at 4M cells. Cause: the two Zou-He boundary columns lived
+   in PyTorch — ~50 kernel launches per step, plus `float(tensor)`
+   sponge lookups forcing TWO GPU->CPU syncs per step (~2 ms on WSL2).
+   The kernel itself took 0.19 ms; the step took 5.6 ms.
+2. Round 2 (syncs removed, columns batched): 0.83 GLUPS. Better, still
+   launch-bound.
+3. Round 3: Zou-He moved INTO the kernel — the edge programs
+   reconstruct their three unknown populations in-register; the whole
+   step is ONE kernel launch. 10.8 GLUPS. Lesson for the episode:
+   on WSL2 the enemy was never arithmetic, it was the CPU-GPU chatter.
+
+Correctness held through all three rounds: max field drift vs the
+readable reference 1.5e-5 (fp32, 10k steps; the ramp-window transient
+of 8e-4 is the documented one-step phase offset between the storage
+conventions and decays once the inlet ramp ends). All three Phase 2
+gates re-passed on the fused solver — cylinder St = 0.1667 and
+Cd = 1.4357, matching the reference to four digits.
+
+Storage-convention note (the algebra that saved a refactor): the
+reference stores post-boundary state and steps collide->stream->BC;
+the fused kernel stores post-collision state and steps
+stream->BC->collide. Since rho and u are collision invariants, the two
+report IDENTICAL macroscopic fields step-for-step — no reordering of
+the readable reference was ever needed, and the correctness gate
+compares exactly the quantities physics cares about.
+
+Also in this phase: Smagorinsky implemented in BOTH solvers (Hou et al.
+1996 closed form from the local Pi_neq; Cs = 0 reduces exactly to BGK,
+so the kernel has no turbulence branch), with tests: near-inert on
+resolved laminar flow, activates in shear, stabilizes tau = 0.502.
+Phase 5 inherits it ready-made.
+
+**Footage:** the benchmark plot with the ceiling line; the three-round
+overhead hunt as a whiteboard beat; the reference-vs-fused MLUPS
+overlay clips (out/clip_overlay_ref, out/clip_overlay_fused).
+

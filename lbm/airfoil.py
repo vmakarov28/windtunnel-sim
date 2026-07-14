@@ -124,13 +124,15 @@ def rasterize(
     ])
     oxi = pts[:, 0].long().clamp(0, nx - 1)
     oyi = pts[:, 1].long().clamp(0, ny - 1)
+    # The span is the OUTLINE's, not the coverage mask's: coverage can
+    # drop the last few sub-half-cell trailing-edge columns entirely,
+    # silently shortening the chord (caught by the staircase figure —
+    # the mask ended 7 cells before the true TE).
     cols = mask.any(dim=1)
-    span = cols.nonzero()
-    if span.numel():
-        lo, hi = int(span.min()), int(span.max())
-        leaky = ~cols
-        leaky[:lo] = leaky[hi + 1:] = False
-        weld = leaky[oxi]
-        if bool(weld.any()):
-            mask[oxi[weld], oyi[weld]] = True
+    lo, hi = int(oxi.min()), int(oxi.max())
+    leaky = ~cols
+    leaky[:lo] = leaky[hi + 1:] = False
+    weld = leaky[oxi]
+    if bool(weld.any()):
+        mask[oxi[weld], oyi[weld]] = True
     return mask

@@ -38,9 +38,19 @@ TRANSIENT_STEPS = 80_000     # past saturation (~t* = 120)
 MEASURE_STEPS = 40_000       # ~10 shedding cycles of measurement
 
 
-def main(device: str = "auto") -> int:
+def main(device: str = "auto", solver: str = "reference",
+         with_sgs: bool = False) -> int:
     scene = load_scene("cylinder_re100")
-    s = Solver.from_scene(scene, seed=0, device=device)
+    if solver == "fused":
+        from lbm.fused import FusedSolver as cls
+    else:
+        cls = Solver
+    s = cls.from_scene(scene, seed=0, device=device)
+    if with_sgs:
+        # Phase 5 gate: the model must be near-inert at a resolved Re=100
+        # (same bands must pass). Enabled here explicitly, not via scene.
+        s.sgs, s.cs_smag = True, 0.14
+        print("Smagorinsky ENABLED for this gate run (Cs = 0.14)")
     d = scene.units.cells                 # diameter [cells]
     u = scene.units.u_lat
     q_dyn = 0.5 * u * u * d               # 0.5 rho0 U^2 D, rho0 = 1
@@ -104,4 +114,5 @@ def main(device: str = "auto") -> int:
 
 if __name__ == "__main__":
     dev = sys.argv[1] if len(sys.argv) > 1 else "auto"
-    sys.exit(main(dev))
+    slv = sys.argv[2] if len(sys.argv) > 2 else "reference"
+    sys.exit(main(dev, slv, with_sgs="sgs" in sys.argv[3:]))

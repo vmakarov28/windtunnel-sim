@@ -62,6 +62,25 @@ def test_airfoil_scene_needs_sgs():
         )
 
 
+def test_airfoil_scene_builds_watertight_chord_complete_mask():
+    torch = pytest.importorskip("torch")
+    from lbm.solver import build_obstacle_mask
+    s = load_scene("airfoil_mh45_re20k")
+    chord = s.units.cells
+    for alpha in (0.0, 10.0):
+        s.raw["obstacle"]["alpha_deg"] = alpha
+        m = build_obstacle_mask(s, s.raw["obstacle"])
+        cols = m.any(dim=1)
+        xs = cols.nonzero().squeeze(1)
+        span = int(xs.max() - xs.min()) + 1
+        # chord-complete: the TE-shortening bug clipped ~7 cells (caught
+        # by the staircase figure); watertight: no all-fluid column inside
+        assert span >= chord * 0.98, f"chord clipped at alpha={alpha}"
+        assert bool(cols[xs.min():xs.max() + 1].all()), "leaky mask"
+        blockage = int(m.any(dim=0).sum()) / s.ny
+        assert blockage < 0.08
+
+
 def test_unknown_scene_raises():
     with pytest.raises(SceneError, match="no scene named"):
         load_scene("does_not_exist")

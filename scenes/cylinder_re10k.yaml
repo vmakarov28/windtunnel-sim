@@ -1,0 +1,37 @@
+# Cylinder at Re = 10,000 — Phase 5 turbulence demo (Smagorinsky LES).
+# tau = 0.5018: far below the plain-BGK floor, admitted only because the
+# subgrid model supplies eddy viscosity where the grid under-resolves.
+# Honesty note: this is 2D LES-flavored plausibility (2D turbulence has
+# an enstrophy cascade, not the 3D energy cascade) — stated in the report.
+name: cylinder_re10k
+description: >
+  Circular cylinder at Re = 10,000, Smagorinsky SGS. Characteristic
+  length = diameter.
+
+physical:
+  char_length_m: 0.05      # D [m]
+  velocity_ms: 3.0         # -> Re = 10,000
+  nu_m2s: 1.5e-5
+
+lattice:
+  cells_per_char: 60       # D = 60 cells
+  u_lat: 0.1               # -> tau = 0.5018 (needs sgs)
+
+domain:
+  length_chars: 30         # nx = 1800
+  height_chars: 15         # ny = 900; blockage 6.7%
+
+sgs: true
+smagorinsky_cs: 0.14
+
+boundaries:
+  inlet: equilibrium_ramp
+  outlet: pressure_sponge
+  top_bottom: periodic
+  ramp_steps: 2000
+  sponge_fraction: 0.08
+
+obstacle:
+  type: cylinder
+  center_x_chars: 8.0
+  center_y_chars: 7.3

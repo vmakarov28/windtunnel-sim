@@ -60,15 +60,33 @@ def main() -> int:
               f"fused {m_fus:9.1f} MLUPS   ({m_fus / m_ref:5.1f}x, "
               f"{100 * m_fus / CEILING_MLUPS:4.1f}% of ceiling)")
 
+    # kernel-only rows (periodic box, no Zou-He columns): what the fused
+    # kernel does when the fixed per-step boundary cost is absent.
+    krows = []
+    for nx, ny in [(2048, 1024), (4096, 2048)]:
+        fus = FusedSolver(nx, ny, tau=0.6, u_char=0.05, device="cuda",
+                          inlet_outlet=False, init_noise=0.0)
+        m = rate(fus, 50, 300)
+        del fus
+        torch.cuda.empty_cache()
+        print(f"{nx:5d}x{ny:<5d}  fused, periodic (kernel only) "
+              f"{m:9.1f} MLUPS   ({100 * m / CEILING_MLUPS:4.1f}% of ceiling)")
+        krows.append((nx, ny, m))
+
     with open(out / "results.csv", "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["nx", "ny", "reference_mlups", "fused_mlups"])
-        w.writerows(rows)
+        w.writerow(["nx", "ny", "reference_mlups", "fused_mlups", "mode"])
+        for r in rows:
+            w.writerow([*r, "open_boundaries"])
+        for nx, ny, m in krows:
+            w.writerow([nx, ny, "", m, "periodic_kernel_only"])
 
     cells = [nx * ny / 1e6 for nx, ny, *_ in rows]
     fig, ax = plt.subplots(figsize=(7, 4.5))
     ax.plot(cells, [r[2] for r in rows], "o-", label="PyTorch reference")
     ax.plot(cells, [r[3] for r in rows], "s-", label="fused Triton kernel")
+    ax.plot([nx * ny / 1e6 for nx, ny, _ in krows], [m for *_, m in krows],
+            "d--", label="fused, periodic (kernel only)")
     ax.axhline(CEILING_MLUPS, color="k", ls="--", lw=1,
                label=f"bandwidth ceiling ~{CEILING_MLUPS / 1e3:.1f} GLUPS "
                      "(72 B/cell @ 960 GB/s)")

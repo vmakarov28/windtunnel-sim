@@ -44,9 +44,13 @@ GHIA_V = np.array([
     0.10890, 0.10091, 0.09233, 0.00000])
 
 
-def main(device: str = "auto") -> int:
+def main(device: str = "auto", solver: str = "reference") -> int:
     scene = load_scene("cavity_re100")
-    s = Solver.from_scene(scene, seed=0, device=device)
+    if solver == "fused":
+        from lbm.fused import FusedSolver as cls
+    else:
+        cls = Solver
+    s = cls.from_scene(scene, seed=0, device=device)
     u_lid = scene.units.u_lat
     print(f"Cavity: {scene.nx}x{scene.ny}, tau={scene.units.tau}, "
           f"u_lid={u_lid}, device={s.device}")
@@ -109,4 +113,5 @@ def main(device: str = "auto") -> int:
 
 if __name__ == "__main__":
     dev = sys.argv[1] if len(sys.argv) > 1 else "auto"
-    sys.exit(main(dev))
+    slv = sys.argv[2] if len(sys.argv) > 2 else "reference"
+    sys.exit(main(dev, slv))

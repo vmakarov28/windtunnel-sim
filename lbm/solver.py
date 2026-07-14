@@ -86,6 +86,8 @@ class Solver:
         lid_velocity: float = 0.0,      # top wall moves in +x (needs wall_y)
         body_force: tuple[float, float] = (0.0, 0.0),  # Guo forcing (Phase 2)
         init_noise: float = 1e-3,       # *u_char, seeds the shedding asymmetry
+        sgs: bool = False,              # Smagorinsky subgrid model (Phase 5)
+        cs_smag: float = 0.14,          # Smagorinsky constant, ~0.1-0.17
         scene_name: str = "adhoc",
     ):
         self.device = pick_device(device)
@@ -101,6 +103,8 @@ class Solver:
         self.scene_name = scene_name
 
         self.omega = 1.0 / self.tau
+        self.sgs = bool(sgs)
+        self.cs_smag = float(cs_smag)
 
         # -- anechoic sponge profile (see module docs, point 6) -----------
         # sigma rises smoothly 0 -> sponge_strength over the last
@@ -198,10 +202,6 @@ class Solver:
         top_bottom = b.get("top_bottom", "periodic")
         if top_bottom not in ("periodic", "bounce_back"):
             raise NotImplementedError(f"top_bottom = {top_bottom!r}")
-        if scene.units.sgs:
-            raise NotImplementedError(
-                "this scene needs the Smagorinsky model (Phase 5)"
-            )
         is_cavity = "lid" in b
         return cls(
             scene.nx, scene.ny,
@@ -213,6 +213,8 @@ class Solver:
             wall_y=(top_bottom == "bounce_back") or is_cavity,
             wall_x=is_cavity,
             lid_velocity=scene.units.u_lat if is_cavity else 0.0,
+            sgs=scene.units.sgs,
+            cs_smag=float(scene.raw.get("smagorinsky_cs", 0.14)),
             scene_name=scene.name,
         )
 
@@ -263,6 +265,39 @@ class Solver:
         usq = (u * u).sum(dim=0)
         if self.has_force:
             uF = u[0] * fx + u[1] * fy                 # u.F, reused per q
+
+        omega = self.omega
+        if self.sgs:
+            # Smagorinsky subgrid viscosity from the LOCAL non-equilibrium
+            # momentum flux (Hou et al. 1996; Kruger sec. 14.5.2) — no
+            # finite differences needed:
+            #   Pi_ab = sum_q e_qa e_qb (f_q - f_q^eq)
+            #   Qbar  = sqrt(2 Pi_ab Pi_ab)
+            #   tau_eff = (tau0 + sqrt(tau0^2 + 18 Cs^2 Qbar / rho)) / 2
+            # At resolved (laminar) scales Qbar ~ 0 and tau_eff -> tau0:
+            # the model is inert where the grid already sees the flow.
+            pxx = torch.zeros_like(usq)
+            pxy = torch.zeros_like(usq)
+            pyy = torch.zeros_like(usq)
+            for q in range(1, Q):
+                ex, ey = E[q]
+                cu = torch.zeros_like(usq)
+                if ex: cu += ex * u[0]
+                if ey: cu += ey * u[1]
+                cu *= 3.0
+                fneq = f[q] - W[q] * rho * (1.0 + cu + 0.5 * cu * cu
+                                            - 1.5 * usq)
+                if ex: pxx += (ex * ex) * fneq
+                if ex and ey: pxy += (ex * ey) * fneq
+                if ey: pyy += (ey * ey) * fneq
+            qbar = (2.0 * (pxx * pxx + 2.0 * pxy * pxy + pyy * pyy)).sqrt()
+            rho_safe = torch.where(rho > 1e-12, rho, torch.ones_like(rho))
+            tau_eff = 0.5 * (self.tau + (
+                self.tau * self.tau
+                + 18.0 * self.cs_smag ** 2 * qbar / rho_safe).sqrt())
+            omega = 1.0 / tau_eff
+            self.last_tau_eff_max = float(tau_eff.max())
+
         for q in range(Q):
             ex, ey = E[q]
             cu = torch.zeros_like(usq)
@@ -270,13 +305,13 @@ class Solver:
             if ey: cu += ey * u[1]
             cu *= 3.0
             feq = W[q] * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
-            f[q] -= self.omega * (f[q] - feq)          # BGK, omega = 1/tau(x)
+            f[q] -= omega * (f[q] - feq)     # BGK; omega is a field with SGS
             if self.has_force:
                 # Guo source (eq. 6.25): (1 - omega/2) w_q *
                 #   [3(e-u).F + 9(e.u)(e.F)]   with (e.u) = cu/3
                 eF = ex * fx + ey * fy
                 s = 3.0 * (eF - uF) + 3.0 * cu * eF
-                f[q] += (1.0 - 0.5 * self.omega) * W[q] * s
+                f[q] += (1.0 - 0.5 * omega) * W[q] * s
 
         # 2b. anechoic sponge: blend toward feq(rho=1, u_in) in the last
         # sponge_fraction of the domain (module docs, point 6).
@@ -413,17 +448,26 @@ class Solver:
 def build_obstacle_mask(scene: Scene, obstacle: dict) -> torch.Tensor:
     """Rasterize the scene's obstacle to a boolean (nx,ny) mask."""
     kind = obstacle.get("type")
+    n = scene.units.cells                        # characteristic length
     if kind == "cylinder":
-        n = scene.units.cells                    # diameter in cells
         cx = obstacle["center_x_chars"] * n
         cy = obstacle["center_y_chars"] * n
         r = n / 2.0
         x = torch.arange(scene.nx, dtype=torch.float32)[:, None] + 0.5
         y = torch.arange(scene.ny, dtype=torch.float32)[None, :] + 0.5
         return ((x - cx) ** 2 + (y - cy) ** 2) <= r * r
-    raise NotImplementedError(
-        f"obstacle type {kind!r} (airfoil_dat arrives in Phase 6)"
-    )
+    if kind == "airfoil_dat":
+        from .airfoil import load_selig, rasterize
+        _, poly = load_selig(obstacle["dat_file"])
+        return rasterize(
+            poly, scene.nx, scene.ny,
+            chord_cells=n,
+            center_x=obstacle["center_x_chars"] * n,
+            center_y=obstacle["center_y_chars"] * n,
+            alpha_deg=float(obstacle.get("alpha_deg", 0.0)),
+            supersample=int(obstacle.get("edge_supersample", 4)),
+        )
+    raise NotImplementedError(f"obstacle type {kind!r}")
 
 
 def capture_failure(

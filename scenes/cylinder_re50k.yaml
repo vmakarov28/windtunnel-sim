@@ -1,0 +1,36 @@
+# Cylinder at Re = 50,000 — Phase 5 stress test (Smagorinsky LES).
+# The units rail sizes this grid: at u = 0.1 the SGS tau floor (0.501)
+# demands D >= 170 cells, hence the 5400x2700 grid (14.6M cells, ~1 GB
+# of populations) — only tractable on the fused kernel.
+name: cylinder_re50k
+description: >
+  Circular cylinder at Re = 50,000, Smagorinsky SGS. Characteristic
+  length = diameter. 2D LES-flavored plausibility, honestly labeled.
+
+physical:
+  char_length_m: 0.05      # D [m]
+  velocity_ms: 15.0        # -> Re = 50,000
+  nu_m2s: 1.5e-5
+
+lattice:
+  cells_per_char: 180      # D = 180 cells
+  u_lat: 0.1               # -> tau = 0.50108 (needs sgs)
+
+domain:
+  length_chars: 30         # nx = 5400
+  height_chars: 15         # ny = 2700; blockage 6.7%
+
+sgs: true
+smagorinsky_cs: 0.14
+
+boundaries:
+  inlet: equilibrium_ramp
+  outlet: pressure_sponge
+  top_bottom: periodic
+  ramp_steps: 2000
+  sponge_fraction: 0.08
+
+obstacle:
+  type: cylinder
+  center_x_chars: 8.0
+  center_y_chars: 7.3

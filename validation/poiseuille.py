@@ -29,7 +29,14 @@ from lbm.solver import Solver
 OUT = Path(__file__).resolve().parent
 
 
-def main(device: str = "auto") -> int:
+def solver_class(name: str):
+    if name == "fused":
+        from lbm.fused import FusedSolver
+        return FusedSolver
+    return Solver
+
+
+def main(device: str = "auto", solver: str = "reference") -> int:
     scene = load_scene("channel_poiseuille")
     tau, u_max = scene.units.tau, scene.units.u_lat
     h = int(scene.units.cells)             # channel height H in cells
@@ -37,9 +44,10 @@ def main(device: str = "auto") -> int:
     fx = 8.0 * nu * u_max / h**2           # force that yields u_max
     nx, ny = 64, h + 2                     # periodic x; +2 wall rows
 
-    s = Solver(nx, ny, tau=tau, u_char=u_max, device=device,
-               inlet_outlet=False, wall_y=True, body_force=(fx, 0.0),
-               init_noise=0.0, scene_name="poiseuille_validation")
+    s = solver_class(solver)(
+        nx, ny, tau=tau, u_char=u_max, device=device,
+        inlet_outlet=False, wall_y=True, body_force=(fx, 0.0),
+        init_noise=0.0, scene_name="poiseuille_validation")
     print(f"Poiseuille: H={h}, tau={tau}, nu={nu:.4g}, fx={fx:.4g}, "
           f"target u_max={u_max}, device={s.device}")
 
@@ -87,4 +95,5 @@ def main(device: str = "auto") -> int:
 
 if __name__ == "__main__":
     dev = sys.argv[1] if len(sys.argv) > 1 else "auto"
-    sys.exit(main(dev))
+    slv = sys.argv[2] if len(sys.argv) > 2 else "reference"
+    sys.exit(main(dev, slv))
