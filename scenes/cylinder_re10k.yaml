@@ -13,13 +13,17 @@ physical:
   velocity_ms: 3.0         # -> Re = 10,000
   nu_m2s: 1.5e-5
 
+# u_lat = 0.1 blew up at step 25.5k: separated shear layers at this Re
+# amplify local velocity ~3.5x freestream -> local Ma ~ 0.6, outside the
+# weakly-compressible envelope (NOTES 2026-07-14). Bluff-body LES scenes
+# budget that amplification: u_lat = 0.05, resolution up via the triangle.
 lattice:
-  cells_per_char: 60       # D = 60 cells
-  u_lat: 0.1               # -> tau = 0.5018 (needs sgs)
+  cells_per_char: 80       # D = 80 cells
+  u_lat: 0.05              # -> tau = 0.5012 (needs sgs); local Ma peaks ~0.3
 
 domain:
-  length_chars: 30         # nx = 1800
-  height_chars: 15         # ny = 900; blockage 6.7%
+  length_chars: 30         # nx = 2400
+  height_chars: 15         # ny = 1200; blockage 6.7%
 
 sgs: true
 smagorinsky_cs: 0.14

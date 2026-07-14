@@ -390,3 +390,57 @@ still holds to four decimals; fused-vs-reference equivalence and the
 cylinder gate re-run follow (open-boundary changes always re-gate —
 that is the rule this project bought on day one).
 
+---
+
+## 2026-07-14 — Phase 5, second blood: the local Mach ceiling
+
+Regularized BCs fixed the inlet. The Re = 10k run then died at **step
+25,500** — this time in the WAKE, u_max = 0.504. Not a boundary bug:
+real physics running past the compressibility envelope.
+
+The diagnosis is a units story, which is the best kind for this project.
+The scene used u_lat = 0.1 (freestream Mach 0.17, nominally fine). But a
+separated cylinder shear layer accelerates fluid locally to ~3-3.5x
+freestream; 3.5 x 0.1 = 0.35 in lattice units -> local Mach ~ 0.6. LBM's
+weakly-compressible error grows like Ma^2, and past Ma ~ 0.4 the scheme
+simply isn't modeling the right equations anymore. The blowup was the
+solver telling the truth about a scene that asked too much of it.
+
+Fix, through the units triangle (NO magic constants): halve u_lat to
+0.05 and recover the lost Reynolds number by raising resolution — Re10k
+went D = 60 -> 80 cells (2.88M), Re50k went D = 180 -> 340 cells (52M,
+3.7 GB, the biggest run of the project). Local Mach now peaks ~0.3.
+Both ran the full 200k steps clean: Re10k saturated at u_max = 0.118,
+Re50k at 0.178, mass drift < 2e-4, no guard trips.
+
+Baked the lesson forward: the MH45 airfoil scene (Phase 6) also dropped
+to u_lat = 0.05 — suction peaks on a lifting section earn the same
+caution as a cylinder shoulder.
+
+**Physics payoff.** Energy spectra of the wake (scripts/spectrum.py):
+- Re = 10k tracks **k^-3 over ~1.5 decades** — the 2D enstrophy-cascade
+  slope, exactly what 2D turbulence should show (Kraichnan 1967). NOT
+  k^-5/3; we plotted that line too and labelled it "NOT expected here"
+  so the honesty is on the figure itself.
+- Re = 50k shows the same k^-3 trend, extended, with more populated
+  high-k modes — the wake is visibly turbulent, vortices merging (the
+  inverse cascade) while enstrophy fluxes to small scales.
+
+**Gate that matters most:** the Re = 100 cylinder gate re-run with SGS
+ENABLED still passes — St = 0.1667, Cd = 1.4385 (vs 1.4357 with SGS
+off, a 0.2% shift). The model is near-inert where the grid resolves the
+flow, exactly as designed: it doesn't touch the validated result, it
+only wakes up where the flow is under-resolved. That is the whole
+contract of an LES subgrid model and we can show it holds.
+
+Honesty for the episode, stated plainly: this is 2D LES-flavored
+plausibility, not DNS truth. 2D turbulence has the wrong cascade
+direction for real 3D turbulence (energy goes UP-scale in 2D, down-scale
+in 3D). We are demonstrating a stable, plausible, spectrally-sensible
+high-Re flow — not claiming quantitative accuracy at Re = 50k. The 3D
+branch is where quantitative high-Re lives.
+
+Deliverable: out/clip_compare (Re=100 laminar street stacked over Re=50k
+turbulent wake — same physical cadence, the visual payoff of the whole
+phase), plus out/re10k/re10k.mp4 and out/re50k/re50k.mp4.
+

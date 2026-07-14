@@ -12,13 +12,17 @@ physical:
   velocity_ms: 15.0        # -> Re = 50,000
   nu_m2s: 1.5e-5
 
+# Same lesson as cylinder_re10k: u_lat = 0.05 to keep local Ma sane in
+# separated flow; the SGS tau floor then demands D >= 334 -> 52M cells,
+# 3.7 GB of populations. Only the fused kernel makes this a ~15-minute
+# run instead of a ~5-hour one.
 lattice:
-  cells_per_char: 180      # D = 180 cells
-  u_lat: 0.1               # -> tau = 0.50108 (needs sgs)
+  cells_per_char: 340      # D = 340 cells
+  u_lat: 0.05              # -> tau = 0.50102 (needs sgs)
 
 domain:
-  length_chars: 30         # nx = 5400
-  height_chars: 15         # ny = 2700; blockage 6.7%
+  length_chars: 30         # nx = 10200
+  height_chars: 15         # ny = 5100; blockage 6.7%
 
 sgs: true
 smagorinsky_cs: 0.14

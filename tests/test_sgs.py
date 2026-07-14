@@ -67,3 +67,22 @@ def test_sgs_stabilizes_marginal_tau():
         s.step()
     g = s.check_guards()   # raises on NaN / runaway
     assert not g["has_nan"]
+
+
+def test_regularized_bc_survives_low_viscosity():
+    # REGRESSION for the Re=10k inlet blowup (NOTES 2026-07-14): at
+    # tau = 0.5015 an EMPTY open tunnel must stay finite and boring.
+    # Plain Zou-He grew a staggered inlet mode to blowup in ~200 steps
+    # here; regularized BCs must hold it flat.
+    s = Solver(120, 48, tau=0.5015, u_char=0.05, device="cpu",
+               inlet_outlet=True, ramp_steps=100, init_noise=1e-3,
+               seed=3, sgs=True, cs_smag=0.14)
+    for _ in range(1500):
+        s.step()
+    g = s.check_guards()
+    assert not g["has_nan"]
+    _, u = s.macroscopics()
+    interior = u[0, 10:-10, :]
+    # empty tunnel: settles at the freestream, no staggered explosion
+    assert float(interior.max()) < 0.08
+    assert float(interior.min()) > 0.02

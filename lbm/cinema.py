@@ -142,8 +142,10 @@ class Dye:
 def _vorticity_rgba(solver, extras, state):
     from .render import vorticity
     omega = vorticity(solver)
-    p = float(torch.quantile(omega.abs().flatten(),
-                             torch.tensor(0.995, device=omega.device)))
+    flat = omega.abs().flatten()
+    if flat.numel() > 4_000_000:      # CUDA quantile caps at ~16M elements
+        flat = flat[:: flat.numel() // 4_000_000 + 1]
+    p = float(torch.quantile(flat, torch.tensor(0.995, device=omega.device)))
     state["scale"] = max(state.get("scale", 0.0), p, 1e-9)
     img = (omega / (2 * state["scale"]) + 0.5).clamp(0, 1)
     return colormaps["RdBu_r"](img.cpu().numpy())

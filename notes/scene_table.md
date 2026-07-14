@@ -5,8 +5,10 @@ double-buffered population working set (72 B/cell).
 
 | scene | Re | L [m] | U [m/s] | cells/L | grid | cells | f-VRAM [GB] | u_lat | tau | Ma | dx [m] | dt [s] | steps per L/U | status |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| airfoil_mh45_re20k | 20000 | 0.1 | 3 | 400 | 3200 x 2000 | 6.40M | 0.461 | 0.1 | 0.506 | 0.173 | 0.00025 | 8.333e-06 | 4000 | needs SGS (Phase 5): bare tau = 0.506 < 0.55, refused by plain-BGK rail |
+| airfoil_mh45_re20k | 20000 | 0.1 | 3 | 400 | 3200 x 2000 | 6.40M | 0.461 | 0.05 | 0.503 | 0.087 | 0.00025 | 4.167e-06 | 8000 | needs SGS (Phase 5): bare tau = 0.503 < 0.55, refused by plain-BGK rail |
 | cavity_re100 | 100 | 0.05 | 0.03 | 256 | 256 x 256 | 0.07M | 0.005 | 0.1 | 1.268 | 0.173 | 0.0001953 | 0.000651 | 2560 | OK (plain BGK) |
 | channel_poiseuille | 32 | 0.01 | 0.048 | 64 | 256 x 64 | 0.02M | 0.001 | 0.05 | 0.8 | 0.087 | 0.0001563 | 0.0001628 | 1280 | OK (plain BGK) |
 | cylinder_re100 | 100 | 0.05 | 0.03 | 40 | 1200 x 600 | 0.72M | 0.052 | 0.06 | 0.572 | 0.104 | 0.00125 | 0.0025 | 667 | OK (plain BGK) |
+| cylinder_re10k | 10000 | 0.05 | 3 | 80 | 2400 x 1200 | 2.88M | 0.207 | 0.05 | 0.5012 | 0.087 | 0.000625 | 1.042e-05 | 1600 | needs SGS (Phase 5): bare tau = 0.501 < 0.55, refused by plain-BGK rail |
+| cylinder_re50k | 50000 | 0.05 | 15 | 340 | 10200 x 5100 | 52.02M | 3.745 | 0.05 | 0.501 | 0.087 | 0.0001471 | 4.902e-07 | 6800 | needs SGS (Phase 5): bare tau = 0.501 < 0.55, refused by plain-BGK rail |
 | dev_smoke_re30 | 30 | 0.05 | 0.009 | 12 | 288 x 180 | 0.05M | 0.004 | 0.05 | 0.56 | 0.087 | 0.004167 | 0.02315 | 240 | OK (plain BGK) |

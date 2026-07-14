@@ -46,9 +46,11 @@ class FrameWriter:
     def write(self, solver: Solver) -> Path:
         omega = vorticity(solver)
         if not self._fixed:
+            flat = omega.abs().flatten().float()
+            if flat.numel() > 4_000_000:   # CUDA quantile caps ~16M elems
+                flat = flat[:: flat.numel() // 4_000_000 + 1]
             p = float(torch.quantile(
-                omega.abs().flatten().float(),
-                torch.tensor(0.995, device=omega.device),
+                flat, torch.tensor(0.995, device=omega.device),
             ))
             self.scale = max(self.scale, p, 1e-9)
         img = (omega / (2.0 * self.scale) + 0.5).clamp(0.0, 1.0)
