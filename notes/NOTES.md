@@ -186,3 +186,31 @@ half of why the 3D run never shed.
 **Footage:** the symmetric-wake 3D frame next to a (coming) 2D shedding
 frame; the rho(x,t) slosh plot; the "empty tunnel is boring now" test.
 
+---
+
+## 2026-07-13 — Phase 1 complete: first flow (v0.1-first-flow)
+
+The Karman vortex street exists: cylinder Re=100, 1200x600, 80k steps
+(t* = 120 convective times), 2000 frames -> 33 s of 60 fps footage
+(`out/cylinder_re100-seed0/vortex_street.mp4`). Timeline of the run:
+symmetric twin shear layers first, sinuous waviness visible by t* ~ 60,
+fully rolled-up street by t* ~ 90 — the instability's whole life story
+in one clip. Vortices advect out through the anechoic sponge without
+visible reflection (a faint seam at the sponge entrance is the one
+honest artifact; it lives in the last non-physical 8%, crop it for
+final footage).
+
+PyTorch D2Q9 reference performance: **172 MLUPS sustained** on the RTX
+5080 (720k cells, fp32, ~40 kernel launches/step). Phase 4's fused
+kernel gets to chase the ~13 GLUPS bandwidth ceiling from here — a 75x
+gap, which is the montage.
+
+Deliverables: the video; checkpoint/restore round-trip test (bitwise,
+`test_checkpoint_roundtrip_bitwise`); impulsive-start failure-reel run
+(`--no-ramp`, out/cylinder_impulsive). Momentum-exchange force
+measurement is implemented and unlocks the Phase 2 cylinder gate.
+
+**Would-be footage from this phase:** the vortex street video itself;
+the MLUPS counter climbing in the run log; side-by-side of the 3D
+symmetric wake vs the 2D street (same physics, one missing trigger).
+

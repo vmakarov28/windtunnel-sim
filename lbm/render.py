@@ -38,7 +38,9 @@ class FrameWriter:
         self.dir.mkdir(parents=True, exist_ok=True)
         self.scale = scale or 0.0
         self._fixed = scale is not None
-        self.count = 0
+        # continue numbering after a --resume instead of overwriting
+        existing = sorted(self.dir.glob("frame_*.png"))
+        self.count = int(existing[-1].stem.split("_")[1]) + 1 if existing else 0
         self.cmap = colormaps["RdBu_r"]
 
     def write(self, solver: Solver) -> Path:
