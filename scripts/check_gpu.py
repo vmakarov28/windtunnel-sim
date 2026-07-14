@@ -27,21 +27,22 @@ def main() -> int:
     print(f"device: {name}  sm_{cap[0]}{cap[1]}  {mem:.1f} GB")
 
     from lbm.solver import Solver
-    nx, ny, nz = 512, 256, 64  # 8.4M cells, ~1.3 GB of populations
-    s = Solver(nx, ny, nz, tau=0.6, u_char=0.05, device="cuda",
+    nx, ny = 2048, 1024  # 2.1M cells (the Phase 4 benchmark grid)
+    s = Solver(nx, ny, tau=0.6, u_char=0.05, device="cuda",
                inlet_outlet=True, ramp_steps=100)
-    for _ in range(5):  # warmup
+    for _ in range(20):  # warmup
         s.step()
     torch.cuda.synchronize()
     t0 = time.perf_counter()
-    n_steps = 20
+    n_steps = 100
     for _ in range(n_steps):
         s.step()
     torch.cuda.synchronize()
     dt = time.perf_counter() - t0
-    mlups = nx * ny * nz * n_steps / dt / 1e6
-    print(f"D3Q19 PyTorch reference: {mlups:.0f} MLUPS on {nx}x{ny}x{nz}")
-    print(f"(Phase 4 fused-kernel ceiling on this card: ~6300 MLUPS)")
+    mlups = nx * ny * n_steps / dt / 1e6
+    print(f"D2Q9 PyTorch reference: {mlups:.0f} MLUPS on {nx}x{ny}")
+    print("(Phase 4 fused-kernel ceiling on this card: ~13 GLUPS at "
+          "72 B/cell/step over ~960 GB/s)")
     return 0
 
 

@@ -1,10 +1,8 @@
-"""Headless vorticity rendering: mid-span slice -> PNG frames.
+"""Headless vorticity rendering: full 2D field -> PNG frames.
 
-Phase 1 keeps the read identical to a 2D tunnel: the z-component of
-vorticity, omega_z = dv/dx - du/dy, on the mid-span plane, in a diverging
-colormap (blue = clockwise, red = counter-clockwise), obstacle composited
-in flat neutral gray. Genuinely-3D shots (Q-criterion isosurfaces) are a
-Phase 3 deliverable.
+omega = dv/dx - du/dy in a diverging colormap (blue = clockwise, red =
+counter-clockwise), obstacle composited in flat neutral gray. Colormap
+presets, tracers, and dye arrive in Phase 3.
 """
 
 from __future__ import annotations
@@ -19,13 +17,12 @@ from matplotlib.image import imsave
 from .solver import Solver
 
 
-def vorticity_z_midplane(solver: Solver) -> torch.Tensor:
-    """omega_z = dv/dx - du/dy at k = nz//2, central differences (ny, nx)."""
+def vorticity(solver: Solver) -> torch.Tensor:
+    """omega = dv/dx - du/dy, central differences, (ny, nx) for display."""
     _, u = solver.macroscopics()
-    k = solver.nz // 2
-    ux, uy = u[0, :, :, k], u[1, :, :, k]
+    ux, uy = u[0], u[1]
     # central differences; roll wraps at edges, matching periodic y (the
-    # one wrong column at x edges sits inside inlet/outlet planes anyway)
+    # wrong column at x edges sits inside the inlet/outlet planes anyway)
     dvdx = (torch.roll(uy, -1, 0) - torch.roll(uy, 1, 0)) * 0.5
     dudy = (torch.roll(ux, -1, 1) - torch.roll(ux, 1, 1)) * 0.5
     return (dvdx - dudy).T  # (ny, nx) so the image reads left-to-right
@@ -45,7 +42,7 @@ class FrameWriter:
         self.cmap = colormaps["RdBu_r"]
 
     def write(self, solver: Solver) -> Path:
-        omega = vorticity_z_midplane(solver)
+        omega = vorticity(solver)
         if not self._fixed:
             p = float(torch.quantile(
                 omega.abs().flatten().float(),
@@ -54,7 +51,7 @@ class FrameWriter:
             self.scale = max(self.scale, p, 1e-9)
         img = (omega / (2.0 * self.scale) + 0.5).clamp(0.0, 1.0)
         rgba = self.cmap(img.cpu().numpy())          # (ny, nx, 4) float
-        solid = solver.mask[:, :, solver.nz // 2].T.cpu().numpy()
+        solid = solver.mask.T.cpu().numpy()
         rgba[solid] = (0.42, 0.42, 0.42, 1.0)        # flat neutral obstacle
         path = self.dir / f"frame_{self.count:06d}.png"
         imsave(path, np.flipud(rgba))                # y up

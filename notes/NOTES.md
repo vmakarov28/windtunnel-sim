@@ -132,3 +132,57 @@ Phase 4 kernel will think.
 at t=0 (breaks the wake's metastable symmetry so shedding onsets
 reproducibly). Same seed -> same flow, bit for bit.
 
+---
+
+## 2026-07-13 — Phase 0.75: back to 2D (user-directed); the 3D run's autopsy
+
+Direction change: finish ALL phases in 2D first, with real footage at
+every phase; the 3D D3Q19 work is preserved on the `3d-d3q19` branch
+(fully runnable, tests passing, 700 frames of its one 35k-step run on
+disk). Consulted Flatscher's LB-t repo (MIT) for architecture ideas —
+composable collision/streaming/BC modules, A-A vs A-B streaming patterns
+worth benchmarking in Phase 4. Ideas only; no code copied.
+
+**The autopsy (best footage so far, three bugs deep):**
+
+1. The 3D cylinder run "finished" 35k steps and produced a beautiful,
+   PERFECTLY SYMMETRIC wake — the unstable steady branch (Fornberg's
+   steady solutions), no vortex street. Worse, the guard log showed
+   u_max = 0.0700 = exactly the inlet speed. Flow over a cylinder
+   shoulder must reach ~1.4x freestream. Autopsy of the checkpoint: the
+   shoulder peaked at 0.064 — BELOW freestream — and interior density
+   sat at 1.059. Diagnosis: equilibrium inlet at FIXED rho=1 + copy
+   outlet let the tunnel pressurize; it ran ~12% slow (effective
+   Re ~ 90) with weakened perturbations. The guard hid it because the
+   global u_max WAS the inlet plane. Guards now measure the interior
+   only — a boundary condition must never grade itself.
+2. First fix attempt (inlet density extrapolated from inside, outlet
+   anchored at rho=1) failed the new regression test in the opposite
+   direction: +55% acceleration down the tunnel. Nothing pinned the
+   inlet density level — positive feedback. Lesson: extrapolation at an
+   inflow is a feedback loop, not a boundary condition.
+3. Proper Zou-He (1997) boundaries (velocity in, pressure out, both
+   solved LOCALLY from the boundary column's own populations) — and the
+   test STILL failed with the same profile. Profiling rho(x, t) revealed
+   why: a standing acoustic wave, rho swinging 0.87 <-> 1.15 with a
+   ~2500-step period. Ramping the inlet from rest is a piston stroke of
+   amplitude u/c_s ~ 14%, and velocity-in/pressure-out is an acoustically
+   closed resonator; bulk viscous damping of the fundamental takes tens
+   of thousands of steps. The viscosity-ramp sponge did NOTHING for it —
+   acoustics barely feel shear viscosity.
+
+**The fix that finally holds:** an anechoic termination — the last 8% of
+the tunnel blends f toward feq(rho=1, u_inlet(t)) with smoothly rising
+strength (the numerical foam wedge). Empty-tunnel test: u = 0.0800,
+rho = 1.0000 to four decimals by t = 2000, flat forever after. Locked in
+as `test_open_boundaries_hold_freestream` — an empty wind tunnel must be
+BORING, and now it provably is.
+
+Also: the cylinder now sits 0.2 D below the centerline (Schaefer-Turek
+style deliberate asymmetry) so shedding onsets deterministically instead
+of waiting on roundoff to break a perfect mirror symmetry — the other
+half of why the 3D run never shed.
+
+**Footage:** the symmetric-wake 3D frame next to a (coming) 2D shedding
+frame; the rho(x,t) slosh plot; the "empty tunnel is boring now" test.
+

@@ -1,9 +1,14 @@
 # windtunnel-sim
 
-A 3D GPU lattice-Boltzmann (D3Q19) wind tunnel, built from scratch for a
+A 2D GPU lattice-Boltzmann (D2Q9) wind tunnel, built from scratch for a
 dev-log video. Two goals, both mandatory: physically credible results
 (validated against Poiseuille/Ghia/cylinder benchmarks and XFOIL/OpenFOAM
 data) and constant visual output.
+
+(A 3D D3Q19 version lives on the `3d-d3q19` branch — runnable, tested;
+the 2D program ships first. Architecture ideas referenced from
+[LB-t](https://github.com/2b-t/LB-t) by Tobit Flatscher, MIT license —
+no code copied.)
 
 ## Running
 

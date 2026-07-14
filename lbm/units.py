@@ -22,7 +22,7 @@ lattice quantities
 and this module solves for the third, via the lattice viscosity relation
 (Kruger et al., "The Lattice Boltzmann Method", 2017, eq. 4.17):
 
-    nu_lat = c_s^2 * (tau - 1/2),   c_s^2 = 1/3  for D3Q19 (and D2Q9)
+    nu_lat = c_s^2 * (tau - 1/2),   c_s^2 = 1/3  for D2Q9 (and D3Q19)
 
 Everything here is dimension-agnostic: the Reynolds triangle and both
 guard rails are identical in 2D and 3D.

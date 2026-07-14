@@ -21,7 +21,7 @@ def test_all_shipped_scenes_resolve():
     assert len(names) >= 4  # cylinder, cavity, channel, airfoil
     for name in names:
         scene = load_scene(name)
-        assert scene.nx > 0 and scene.ny > 0 and scene.nz > 0
+        assert scene.nx > 0 and scene.ny > 0
 
 
 def test_all_scenes_fit_in_vram():
@@ -36,16 +36,16 @@ def test_all_scenes_fit_in_vram():
 def test_cylinder_scene_numbers():
     s = load_scene("cylinder_re100")
     assert s.units.reynolds == pytest.approx(100.0)
-    assert (s.nx, s.ny, s.nz) == (900, 450, 90)
+    assert (s.nx, s.ny) == (1200, 600)
     assert s.units.cells >= 30              # Phase 1 demo requirement
-    assert s.units.tau == pytest.approx(0.563)
+    assert s.units.tau == pytest.approx(0.572)
     blockage = s.units.cells / s.ny
     assert blockage < 0.08                  # < 8% blockage
 
 
 def test_cavity_scene_numbers():
     s = load_scene("cavity_re100")
-    assert (s.nx, s.ny, s.nz) == (256, 256, 16)
+    assert (s.nx, s.ny) == (256, 256)
     assert s.units.reynolds == pytest.approx(100.0)
     assert s.units.tau == pytest.approx(1.268)
 
@@ -53,7 +53,7 @@ def test_cavity_scene_numbers():
 def test_airfoil_scene_needs_sgs():
     s = load_scene("airfoil_mh45_re20k")
     assert s.units.sgs
-    assert s.units.cells >= 200        # 3D chord floor (was 400 in the 2D plan)
+    assert s.units.cells >= 400             # Phase 6 chord requirement
     # The same parameters must be REFUSED without the turbulence model:
     with pytest.raises(UnitError, match="below the plain-BGK floor"):
         resolve(
@@ -74,7 +74,7 @@ def test_run_py_smoke():
         capture_output=True, text=True, cwd=ROOT,
     )
     assert out.returncode == 0, out.stderr
-    assert "tau = 0.563" in out.stdout
+    assert "tau = 0.572" in out.stdout
 
 
 def test_run_py_requires_seed():

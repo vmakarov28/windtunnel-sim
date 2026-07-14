@@ -18,13 +18,12 @@ lattice:
 domain:
   length_chars: 24         # nx = 288
   height_chars: 15         # ny = 180
-  span_chars: 0.5          # nz = 6
 
 sgs: false
 
 boundaries:
   inlet: equilibrium_ramp
-  outlet: zero_gradient_sponge
+  outlet: pressure_sponge
   top_bottom: periodic
   ramp_steps: 200
   sponge_fraction: 0.08
@@ -32,4 +31,4 @@ boundaries:
 obstacle:
   type: cylinder
   center_x_chars: 6.0
-  center_y_chars: 7.5
+  center_y_chars: 7.3
