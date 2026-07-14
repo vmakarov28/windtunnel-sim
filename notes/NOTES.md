@@ -444,3 +444,66 @@ Deliverable: out/clip_compare (Re=100 laminar street stacked over Re=50k
 turbulent wake — same physical cadence, the visual payoff of the whole
 phase), plus out/re10k/re10k.mp4 and out/re50k/re50k.mp4.
 
+---
+
+## 2026-07-14 — Phase 6: the airfoil experiment (MH45 at Re = 20,000)
+
+The climax. MH45 (a reflex flying-wing section, 9.85% thick), chord = 400
+cells, alpha 0-10 deg step 1, Re = 20k, Smagorinsky LES on the fused
+kernel. Each point: 10 convective times of transient, then Cl/Cd averaged
+by momentum exchange over 24 convective times (50-105 shedding periods
+per point — far past the spec's >= 8). Blockage 2.5%. Full sweep ran
+~11 x 6 min; the process is stateless per alpha and the CSV is written
+incrementally, which paid off — a session teardown killed it at alpha 8
+and the resume picked up cleanly at 9.
+
+**Results (validation/mh45_polar.png, mh45_sweep.csv):**
+
+| alpha | Cl | Cd |
+|---|---|---|
+| 0 | -0.00 | 0.031 |
+| 2 | 0.12 | 0.039 |
+| 4 | 0.47 | 0.059 |
+| 6 | 0.66 | 0.082 |
+| 8 | 0.68 | 0.076 |
+| 10 | 0.83 | 0.097 |
+
+**What went RIGHT (the honest win):** the pre-stall lift-curve slope is
+**6.76 / rad** — within **8% of thin-airfoil theory's 2*pi = 6.28**, and
+the reflex section's near-zero lift at alpha = 0 is exactly what an MH45
+should do (the reflexed trailing edge trades zero-alpha lift for pitch
+stability). The lift curve is clean and monotonic. If the user's XFOIL
+polars land near 2*pi slope (they should, pre-stall), this is a WIN by
+the project's stated criterion (slope within ~15%).
+
+**What went as PREDICTED (the honest miss):** Cd is high — 0.031 at
+alpha = 0, rising to ~0.097. A real airfoil at Re = 20k sits nearer
+0.02-0.03. Two documented causes, both stated before we ever ran it:
+(1) the staircased mask (validation/mh45_staircase.png shows the jagged
+edge — a real video beat); (2) the boundary layer is
+~ c/sqrt(Re) ~ 2.8 cells thick on a 400-cell chord, barely resolved, so
+skin friction and separation are both mismodeled upward. Disagreement
+WITH EXPLANATION, exactly as the brief demanded — not massaged toward a
+prettier number.
+
+**What we DON'T trust (stated plainly):** the stall behavior. Cl plateaus
+softly around 6-8 deg then rises again to 10 — that is NOT a
+quantitative stall prediction. 2D LES with no transition model has
+different separation physics than XFOIL's e^N transition; the stall
+angle is untrusted by design and the verdict table says so.
+
+**Error bars are the physics, not the noise.** The Cl std-dev (0.14-0.30)
+is comparable to the mean at low alpha. This is real: at Re = 20k the
+wake sheds violently and the instantaneous lift genuinely swings that
+much. The bars are oscillation amplitude, honestly plotted; the mean is
+resolved over 50+ periods.
+
+Verdict table: notes/phase6_verdict.md (auto-regenerates with the XFOIL
+overlay the moment data/xfoil_mh45_re20k.csv appears — columns
+alpha,cl,cd). Until then the XFOIL rows read PENDING, not a fake pass.
+
+**Footage:** the staircase zoom (the honest mask); the Cl(alpha) /
+Cd(alpha) polars with error bars; the alpha-6 vorticity + dye beauty
+clips over the section (out/airfoil_a6_*); and, when the user's XFOIL
+data arrives, the overlay reveal.
+

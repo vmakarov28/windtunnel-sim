@@ -41,8 +41,9 @@ from lbm.fused import FusedSolver
 ROOT = Path(__file__).resolve().parent.parent
 OUT_CSV = ROOT / "validation" / "mh45_sweep.csv"
 
-TRANSIENT_CONV = 12.0     # convective times c/U before measuring
-MEASURE_CONV = 16.0       # convective times of measurement
+TRANSIENT_CONV = 10.0     # convective times c/U before measuring
+MEASURE_CONV = 24.0       # convective times; >= 8 shedding periods (checked
+                          # per-point from the Cl FFT and printed)
 
 
 def run_alpha(alpha: float, device: str) -> dict:

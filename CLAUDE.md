@@ -58,9 +58,11 @@ A-A vs A-B streaming patterns for Phase 4.
 - Phase 5 (Smagorinsky SGS): done — Re=10k/50k stable over 200k steps,
   k^-3 spectra, Re=100 gate still passes with SGS on. Two instabilities
   diagnosed + fixed (regularized BCs; local-Mach via units) — see NOTES.
-- Phase 6 (MH45 airfoil sweep): in progress — loader/rasterizer/sweep/
-  verdict scripts ready, staircase figure done. Needs the alpha sweep run
-  + user XFOIL polars (data/xfoil_mh45_re20k.csv).
+- Phase 6 (MH45 airfoil sweep): done — tag `v0.6-airfoil`. Sweep 0-10 deg
+  at Re=20k; lift slope 6.76/rad (within 8% of 2*pi), Cd high as predicted
+  (staircase + ~3-cell BL), stall untrusted. Polars + verdict table +
+  staircase figure + beauty clips. XFOIL overlay auto-appears when the
+  user drops data/xfoil_mh45_re20k.csv (alpha,cl,cd) — review-time step.
 - Phase 7 (WebGPU browser toy): stretch, NEEDS SEPARATE USER APPROVAL.
 
 ## Practicalities
