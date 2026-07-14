@@ -380,9 +380,43 @@ class Solver:
             f2[6, -1, :] = c[5] + t - (1.0 / 6.0) * u_out
             f2[8, -1, :] = c[7] - t - (1.0 / 6.0) * u_out
 
+            # Regularize both boundary columns (Latt & Chopard 2008):
+            # rebuild f = feq(rho_b, u_b) + w_q (9/2) Q_q : Pi_neq, i.e.
+            # keep only the hydrodynamic part of the non-equilibrium.
+            # Zou-He alone leaves a staggered mode that BGK cannot damp
+            # at low viscosity — at Re = 10k (tau = 0.5018) it grew from
+            # seed noise to blowup in 200 steps (NOTES 2026-07-14).
+            u_in_col = torch.full_like(rho_in, u_in)
+            zeros = torch.zeros_like(rho_in)
+            self._regularize_column(f2[:, 0, :], rho_in, u_in_col, zeros)
+            ones = torch.ones_like(u_out)
+            self._regularize_column(f2[:, -1, :], ones, u_out, zeros)
+
         # swap A/B buffers
         self.f, self.f2 = f2, f
         self.step_count += 1
+
+    @staticmethod
+    def _regularize_column(col: torch.Tensor, rho: torch.Tensor,
+                           ux: torch.Tensor, uy: torch.Tensor) -> None:
+        """In-place regularized reconstruction of one boundary column
+        (9, ny): f_q = f_q^eq(rho, u) + w_q (9/2) Q_qab Pi^neq_ab, with
+        Q_qab = e_qa e_qb - delta_ab / 3 (Latt & Chopard 2008)."""
+        usq = ux * ux + uy * uy
+        feq = torch.empty_like(col)
+        for q in range(Q):
+            ex, ey = E[q]
+            cu = 3.0 * (ex * ux + ey * uy)
+            feq[q] = W[q] * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
+        fneq = col - feq
+        pxx = fneq[1] + fneq[2] + fneq[5] + fneq[6] + fneq[7] + fneq[8]
+        pyy = fneq[3] + fneq[4] + fneq[5] + fneq[6] + fneq[7] + fneq[8]
+        pxy = fneq[5] + fneq[6] - fneq[7] - fneq[8]
+        for q in range(Q):
+            ex, ey = E[q]
+            qpi = ((ex * ex - 1.0 / 3.0) * pxx + (ey * ey - 1.0 / 3.0) * pyy
+                   + 2.0 * ex * ey * pxy)
+            col[q] = feq[q] + W[q] * 4.5 * qpi
 
     # ------------------------------------------------------------------
     def guards(self) -> dict:

@@ -143,6 +143,43 @@ def _step_kernel(
     f6 = tl.where(is_out, f5 + t_imb - (1.0 / 6.0) * u_out, f6)
     f8 = tl.where(is_out, f7 - t_imb - (1.0 / 6.0) * u_out, f8)
 
+    # Regularize the boundary columns (Latt & Chopard 2008): keep only
+    # the hydrodynamic part of f_neq — Zou-He alone carries a staggered
+    # mode that is undamped at low viscosity (blew up Re=10k in 200
+    # steps; NOTES 2026-07-14). b-lane target: (rho_b, u_b, v=0).
+    b_lane = is_in | is_out
+    rho_b = tl.where(is_in, rho_in, 1.0)
+    ux_b = tl.where(is_in, u_in, u_out)
+    cub = 3.0 * ux_b
+    ub2 = 1.5 * ux_b * ux_b
+    fb0 = W0 * rho_b * (1.0 - ub2)
+    fb1 = WA * rho_b * (1.0 + cub + 0.5 * cub * cub - ub2)
+    fb2 = WA * rho_b * (1.0 - cub + 0.5 * cub * cub - ub2)
+    fb34 = WA * rho_b * (1.0 - ub2)
+    fb57 = WD * rho_b * (1.0 + cub + 0.5 * cub * cub - ub2)
+    fb68 = WD * rho_b * (1.0 - cub + 0.5 * cub * cub - ub2)
+    pxx = (f1 - fb1) + (f2 - fb2) + (f5 - fb57) + (f6 - fb68) \
+        + (f7 - fb57) + (f8 - fb68)
+    pyy = (f3 - fb34) + (f4 - fb34) + (f5 - fb57) + (f6 - fb68) \
+        + (f7 - fb57) + (f8 - fb68)
+    pxy = (f5 - fb57) + (f6 - fb68) - (f7 - fb57) - (f8 - fb68)
+    third = 1.0 / 3.0
+    f0 = tl.where(b_lane, fb0 + W0 * 4.5 * (-third * pxx - third * pyy), f0)
+    f1 = tl.where(b_lane, fb1 + WA * 4.5 * (2.0 * third * pxx
+                                            - third * pyy), f1)
+    f2 = tl.where(b_lane, fb2 + WA * 4.5 * (2.0 * third * pxx
+                                            - third * pyy), f2)
+    f3 = tl.where(b_lane, fb34 + WA * 4.5 * (-third * pxx
+                                             + 2.0 * third * pyy), f3)
+    f4 = tl.where(b_lane, fb34 + WA * 4.5 * (-third * pxx
+                                             + 2.0 * third * pyy), f4)
+    qp_pos = 2.0 * third * (pxx + pyy) + 2.0 * pxy   # e_x e_y = +1 diag
+    qp_neg = 2.0 * third * (pxx + pyy) - 2.0 * pxy   # e_x e_y = -1 diag
+    f5 = tl.where(b_lane, fb57 + WD * 4.5 * qp_pos, f5)
+    f6 = tl.where(b_lane, fb68 + WD * 4.5 * qp_pos, f6)
+    f7 = tl.where(b_lane, fb57 + WD * 4.5 * qp_neg, f7)
+    f8 = tl.where(b_lane, fb68 + WD * 4.5 * qp_neg, f8)
+
     # -- macroscopics (Guo half-force shift) ------------------------------
     rho = f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8
     rho_safe = tl.where(rho > 1e-12, rho, 1.0)

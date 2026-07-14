@@ -353,3 +353,40 @@ Phase 5 inherits it ready-made.
 overhead hunt as a whiteboard beat; the reference-vs-fused MLUPS
 overlay clips (out/clip_overlay_ref, out/clip_overlay_fused).
 
+---
+
+## 2026-07-14 — Phase 5, first blood: Zou-He eats itself at Re = 10k
+
+The very first turbulence run (cylinder Re = 10,000, tau = 0.5018) died
+at **step 200** — runaway velocity 0.488 while the ramped inlet was
+still at 0.024. The failure-capture path did its job: checkpoint, seed,
+and metadata landed in failures/20260714-001740/ before the halt.
+
+Autopsy from the captured state:
+- The runaway cell is at **x = 1** — the column NEXT TO THE INLET, 480
+  cells upstream of the cylinder. Innocent bystander physics.
+- The velocity along that column alternates cell-to-cell (0.32, 0.16,
+  0.50, 0.29, 0.15, 0.52...) — a staggered, grid-scale mode.
+- Reference and fused solvers reproduce the blowup IDENTICALLY
+  (u_max trajectories match to three digits) — not a kernel bug, a
+  boundary-condition property.
+
+Diagnosis: the known low-viscosity fragility of Zou-He. The
+reconstruction satisfies mass and momentum at the wall but leaves a
+non-hydrodynamic (staggered) component in the boundary populations.
+BGK damps that mode at a rate ~ set by the viscosity: at Re = 100
+(nu = 0.024) it dies instantly; at Re = 10k (nu = 6e-4, omega = 1.993)
+it is essentially undamped, feeds back through the reconstruction each
+step, and grows from the 1e-4 seed noise to blowup in 200 steps.
+
+Fix: **regularized boundary conditions** (Latt & Chopard 2008) — keep
+the Zou-He mass/momentum solve, then rebuild the whole boundary column
+as f = feq(rho_b, u_b) + w_q (9/2) Q_q : Pi_neq, projecting the
+non-equilibrium onto its hydrodynamic part and filtering everything
+else. Implemented in both solvers (in-register in the kernel).
+Verified: Re = 10k now tracks the ramp smoothly to u_max ~ 2.1 u_in
+(the starting vortex) with tau_eff engaged; the empty-tunnel regression
+still holds to four decimals; fused-vs-reference equivalence and the
+cylinder gate re-run follow (open-boundary changes always re-gate —
+that is the rule this project bought on day one).
+
