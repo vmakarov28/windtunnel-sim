@@ -154,6 +154,32 @@ def test_inlet_outlet_cylinder_sheds_wake():
     assert float(u[1, 50:110, :, 2].abs().max()) > 1e-3   # wake transverse v
 
 
+def test_poiseuille_profile_with_guo_forcing_3d():
+    # Body-force-driven 3D channel (periodic x and z, bounce-back y-walls):
+    # u(y) parabolic, u_max = F H^2 / (8 rho nu). Checks Guo forcing AND
+    # the spanwise-periodic setup that the 3D validation gauntlet uses.
+    nx, ny, nz, tau = 8, 34, 6, 0.8
+    nu = (tau - 0.5) / 3.0
+    h = ny - 2                      # fluid rows between the half-cell walls
+    u_target = 0.02
+    fx = 8.0 * nu * u_target / h**2
+    s = Solver(nx, ny, nz, tau=tau, u_char=u_target, device="cpu",
+               inlet_outlet=False, wall_y=True, body_force=(fx, 0.0, 0.0),
+               init_noise=0.0)
+    for _ in range(8000):           # a few diffusion times H^2/nu
+        s.step()
+    _, u = s.macroscopics()
+    prof = u[0, nx // 2, 1:-1, nz // 2]              # fluid rows, mid-span
+    y = torch.arange(1, ny - 1, dtype=torch.float32) - 0.5  # wall at y=0.5
+    y_hat = y / h
+    analytic = 4.0 * u_target * y_hat * (1.0 - y_hat)
+    l2 = float(((prof - analytic) ** 2).mean().sqrt()
+               / (analytic ** 2).mean().sqrt())
+    assert l2 < 0.01, f"3D Poiseuille L2 error {l2:.4f} >= 1%"
+    # spanwise-invariant: no z-dependence should develop
+    assert float(u[0, nx // 2, ny // 2, :].std()) < 1e-6
+
+
 def test_guards_catch_nan_and_capture_failure(tmp_path):
     s = make_periodic_box(nx=16, ny=16, nz=4)
     s.f[3, 5, 5, 1] = float("nan")

@@ -64,6 +64,7 @@ class Solver:
         sponge_fraction: float = 0.08,  # of nx, before the outlet
         sponge_strength: float = 0.15,  # peak anechoic blend rate
         wall_y: bool = False,           # bounce-back walls at y=0, y=ny-1
+        body_force: tuple[float, float, float] = (0.0, 0.0, 0.0),  # Guo
         init_noise: float = 1e-3,       # *u_char, seeds the shedding asymmetry
         scene_name: str = "adhoc",
     ):
@@ -74,6 +75,8 @@ class Solver:
         self.step_count = 0
         self.inlet_outlet = inlet_outlet
         self.ramp_steps = ramp_steps
+        self.force = tuple(float(c) for c in body_force)
+        self.has_force = any(c != 0.0 for c in self.force)
         self.scene_name = scene_name
 
         self.omega = 1.0 / self.tau
@@ -174,7 +177,8 @@ class Solver:
         return 0.5 - 0.5 * math.cos(math.pi * step / self.ramp_steps)
 
     def macroscopics(self) -> tuple[torch.Tensor, torch.Tensor]:
-        """rho (nx,ny,nz) and u (3,nx,ny,nz) from the populations."""
+        """rho (nx,ny,nz) and u (3,nx,ny,nz). With Guo forcing, u carries
+        the half-step force shift u = (sum e f + F/2)/rho (Kruger eq. 6.27)."""
         rho = self.f.sum(dim=0)
         u = torch.zeros((3, self.nx, self.ny, self.nz),
                         dtype=torch.float32, device=self.device)
@@ -183,6 +187,10 @@ class Solver:
             if ex: u[0] += ex * self.f[q]
             if ey: u[1] += ey * self.f[q]
             if ez: u[2] += ez * self.f[q]
+        if self.has_force:
+            u[0] += 0.5 * self.force[0]
+            u[1] += 0.5 * self.force[1]
+            u[2] += 0.5 * self.force[2]
         rho_safe = torch.where(rho > 1e-12, rho, torch.ones_like(rho))
         u /= rho_safe
         u[:, self.mask] = 0.0
@@ -208,6 +216,9 @@ class Solver:
         # 1+2. collision: relax toward equilibrium, in place, per direction.
         rho, u = self.macroscopics()
         usq = (u * u).sum(dim=0)
+        fx, fy, fz = self.force
+        if self.has_force:
+            uF = u[0] * fx + u[1] * fy + u[2] * fz      # u.F, reused per q
         for q in range(Q):
             ex, ey, ez = E[q]
             cu = torch.zeros_like(usq)
@@ -217,6 +228,12 @@ class Solver:
             cu *= 3.0
             feq = W[q] * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
             f[q] -= self.omega * (f[q] - feq)   # BGK, omega = 1/tau
+            if self.has_force:
+                # Guo source (Kruger eq. 6.25): (1 - omega/2) w_q *
+                #   [3(e-u).F + 9(e.u)(e.F)]   with (e.u) = cu/3
+                eF = ex * fx + ey * fy + ez * fz
+                s = 3.0 * (eF - uF) + 3.0 * cu * eF
+                f[q] += (1.0 - 0.5 * self.omega) * W[q] * s
 
         # 2b. anechoic sponge: blend the last n_sp x-planes toward
         # feq(rho=1, (u_in, 0, 0)) so wakes and acoustic waves are absorbed
