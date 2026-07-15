@@ -180,6 +180,37 @@ def test_poiseuille_profile_with_guo_forcing_3d():
     assert float(u[0, nx // 2, ny // 2, :].std()) < 1e-6
 
 
+def test_momentum_exchange_force_is_drag_dominated():
+    # Mini 3D cylinder: the momentum-exchange force must be positive drag
+    # (force[0] > 0, along the flow) with a plausible Cd, and negligible
+    # spanwise force (the cylinder is spanwise-uniform). This checks the
+    # force is WIRED right; the quantitative St/Cd gate is the full run.
+    nx, ny, nz = 140, 60, 6
+    d = 12.0
+    x = torch.arange(nx, dtype=torch.float32)[:, None] + 0.5
+    y = torch.arange(ny, dtype=torch.float32)[None, :] + 0.5
+    mask = ((x - 36.0) ** 2 + (y - 30.0) ** 2 <= (d / 2) ** 2)
+    mask = mask[:, :, None].expand(nx, ny, nz).clone()
+    u_in = 0.08
+    s = Solver(nx, ny, nz, tau=0.65, u_char=u_in, device="cpu",
+               obstacle_mask=mask, inlet_outlet=True, ramp_steps=100, seed=1)
+    for _ in range(400):
+        s.step()
+    s.measure_force = True
+    fx = fy = fz = 0.0
+    n = 200
+    for _ in range(n):
+        s.step()
+        f = s.last_force.tolist()
+        fx += f[0]; fy += f[1]; fz += f[2]
+    fx, fy, fz = fx / n, fy / n, fz / n
+    q_dyn = 0.5 * u_in * u_in * d * nz            # 0.5 rho U^2 * frontal area
+    cd = fx / q_dyn
+    assert fx > 0.0, "drag must be positive (with the flow)"
+    assert 0.5 < cd < 4.0, f"Cd = {cd:.2f} implausible on this coarse grid"
+    assert abs(fz) < 0.1 * abs(fx), "spanwise force should be negligible"
+
+
 def test_guards_catch_nan_and_capture_failure(tmp_path):
     s = make_periodic_box(nx=16, ny=16, nz=4)
     s.f[3, 5, 5, 1] = float("nan")

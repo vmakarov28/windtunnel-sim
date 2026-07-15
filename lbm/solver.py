@@ -123,6 +123,20 @@ class Solver:
             self._bounce_idx[q] = idx if idx.numel() else None
         self._solid_idx = self.mask.reshape(-1).nonzero(as_tuple=False).squeeze(1)
 
+        # Obstacle-only boundary links for the momentum-exchange force
+        # (Kruger eq. 5.51). Walls/lid are excluded — we weigh the model,
+        # not the tunnel. Enabled on demand: set measure_force = True.
+        self.measure_force = False
+        self.last_force: torch.Tensor | None = None   # (3,) on device
+        self._force_idx: list[torch.Tensor | None] = [None] * Q
+        if obstacle_mask is not None:
+            obs = obstacle_mask.cpu().to(self.device)
+            for q in range(1, Q):
+                up_obs = torch.roll(obs, shifts=E[q], dims=(0, 1, 2)) \
+                    & ~self.mask
+                idx = up_obs.reshape(-1).nonzero(as_tuple=False).squeeze(1)
+                self._force_idx[q] = idx if idx.numel() else None
+
         # -- initial condition: equilibrium + seeded noise ----------------
         # Tiny seeded velocity noise breaks the wake's metastable symmetry
         # so vortex shedding onsets reproducibly (seed -> same flow).
@@ -262,6 +276,24 @@ class Solver:
                 f2[q].view(-1)[idx] = f[OPP[q]].view(-1)[idx]
         if self._solid_idx.numel():
             f2.view(Q, -1)[:, self._solid_idx] = 0.0  # solids hold no fluid
+
+        # 4b. momentum-exchange force on the obstacle (Kruger eq. 5.51):
+        # each boundary link transfers e_qbar * (f_q_incoming + f_bounced)
+        # to the body, qbar pointing into the solid. This is where 3D
+        # Cd/Cl (and Cl_z) come from — counted momentum, no pressure
+        # integral. Force is a 3-vector here.
+        if self.measure_force:
+            force = torch.zeros(3, dtype=torch.float32, device=self.device)
+            for q in range(1, Q):
+                idx = self._force_idx[q]
+                if idx is None:
+                    continue
+                qb = OPP[q]  # points into the obstacle
+                transfer = (f[qb].view(-1)[idx] + f2[q].view(-1)[idx]).sum()
+                force[0] += E[qb][0] * transfer
+                force[1] += E[qb][1] * transfer
+                force[2] += E[qb][2] * transfer
+            self.last_force = force
 
         # 5. open boundaries: equilibrium velocity inlet at x=0. No special
         # outlet — the anechoic sponge above absorbs structures and pins the
