@@ -170,6 +170,19 @@ run): an empty 3D tunnel now holds u = 0.0800 and rho = 1.000 in the
 interior (test_open_boundaries_hold_freestream_3d), and an offset cylinder
 ACCELERATES the flow past u_in and grows transverse wake velocity
 (test_inlet_outlet_cylinder_sheds_wake) — the two things the original run
-provably failed. 46 tests pass. Next: the full GPU cylinder run to confirm
-a shed street, then the 3D validation gauntlet.
+provably failed. 46 tests pass.
+
+**GPU confirmation (new scene cylinder_re100_dev, 576x288x16 = 2.65M
+cells, 26k steps at 370 MLUPS):** the mid-plane omega_z now shows a clean,
+fully-developed Karman vortex street — the exact thing the original 35k-
+step run never produced. The numbers that were wrong before are right now:
+interior u_max = 0.112 = 1.4x u_in (the physical cylinder-shoulder
+acceleration; the old run read u_max = u_in exactly because it measured
+the pressurized inlet plane), and mass drift is -0.04% (the old code
+pressurized +6%). Video: out/re3d_dev/cylinder_re100_dev_3d.mp4.
+
+Next: the full-resolution cylinder run for the b-roll, then the 3D
+validation gauntlet (spanwise-periodic cavity/channel/cylinder St+Cd),
+then Zou-He + regularized BCs for the quantitative gates, the fused
+D3Q19 kernel, and SGS.
 
