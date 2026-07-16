@@ -1,3 +1,5 @@
+# >>> HISTORICAL BRANCH — 3D development moved to lbm3d/ on main (2026-07-14, tag v0.8-3d-core). Do not develop here. <<<
+
 # Project conventions (read before touching anything)
 
 3D GPU lattice-Boltzmann wind tunnel (D3Q19) for a YouTube dev-log episode.
