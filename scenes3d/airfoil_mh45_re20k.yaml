@@ -1,0 +1,54 @@
+# MH45 airfoil at Re = 20,000 — the Phase 6 experiment.
+# NOTE: this scene is REFUSED by units.resolve() without the Smagorinsky
+# model (bare tau = 0.503 < 0.55). That refusal is by design: it is the
+# units discipline telling us Re = 20k needs the Phase 5 turbulence model.
+# sgs: true drops the floor to 0.501 (molecular tau may approach 1/2 because
+# the SGS eddy viscosity raises the EFFECTIVE local tau).
+#
+# 3D note: spanwise-periodic wing section (infinite wing) with span 0.2c —
+# standard for section LES at low Re, and the honest 3D analog of a 2D
+# XFOIL polar. Chord dropped from the 2D plan's 400 to 200 cells: at
+# 8c x 5c x 0.2c the f-populations alone are cells*152 B, and c = 200
+# already costs ~9.7 GB of the 16 GB card. Consequence to state in the
+# report: BL thickness ~ c/sqrt(Re) ~ 1.4 cells, so Cd will be
+# overpredicted even more than the 2D plan expected.
+name: airfoil_mh45_re20k
+description: >
+  MH45 flying-wing airfoil at Re = 20,000, spanwise-periodic section,
+  angle-of-attack sweep 0..10 deg. Characteristic length = chord.
+  Requires Smagorinsky SGS (Phase 5).
+
+physical:
+  char_length_m: 0.1       # chord c [m]
+  velocity_ms: 3.0         # freestream U [m/s]  ->  Re = 20,000
+  nu_m2s: 1.5e-5
+
+lattice:
+  cells_per_char: 200      # chord = 200 cells (3D VRAM constraint; was 400 in 2D plan)
+  u_lat: 0.05              # -> tau = 0.5015; needs sgs: true to load.
+                           # 0.05, not 0.1: separated flow amplifies local
+                           # velocity 2-3x and the 2D program measured the
+                           # blowup at u_lat = 0.1 (local Ma ~ 0.6) — the
+                           # local-Mach lesson, NOTES 2026-07-14.
+
+domain:
+  length_chars: 8          # nx = 1600
+  height_chars: 5          # ny = 1000; blockage < 8% even at alpha = 10 deg
+  span_chars: 0.2          # nz = 40, periodic
+
+sgs: true
+
+boundaries:
+  inlet: equilibrium_ramp
+  outlet: anechoic_sponge
+  top_bottom: periodic
+  ramp_steps: 2000
+  sponge_fraction: 0.08
+
+obstacle:
+  type: airfoil_dat          # Selig-format loader arrives in Phase 6
+  dat_file: assets/mh45.dat  # provided by the user before Phase 6
+  alpha_deg: 0.0             # overridden by the sweep script
+  center_x_chars: 2.0
+  center_y_chars: 2.5
+  edge_supersample: 4        # anti-staircase supersampling of the mask

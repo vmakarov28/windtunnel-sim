@@ -1,0 +1,36 @@
+# Fast 3D cylinder at Re = 100 — development / confirmation scene.
+# Reduced resolution and a thin periodic span so it reaches a shed vortex
+# street in a few minutes on the GPU (the full cylinder_re100 is 36.5M
+# cells). NOT a validation case; the St/Cd gate uses the full scene.
+name: cylinder_re100_dev
+description: >
+  Reduced 3D cylinder at Re = 100 for quick confirmation of the shedding
+  wake. Characteristic length = diameter; thin periodic span.
+
+physical:
+  char_length_m: 0.05      # D [m]
+  velocity_ms: 0.03        # -> Re = U*D/nu = 100
+  nu_m2s: 1.5e-5
+
+lattice:
+  cells_per_char: 24       # D = 24 cells
+  u_lat: 0.08              # -> tau = 0.5576 via units.resolve()
+
+domain:
+  length_chars: 24         # nx = 576
+  height_chars: 12         # ny = 288; blockage D/H = 8.3% (dev only)
+  span_chars: 0.667        # nz = 16, periodic
+
+sgs: false
+
+boundaries:
+  inlet: equilibrium_ramp
+  outlet: anechoic_sponge
+  top_bottom: periodic
+  ramp_steps: 1000
+  sponge_fraction: 0.08
+
+obstacle:
+  type: cylinder
+  center_x_chars: 6.0         # 6 D from inlet -> 18 D of wake to watch
+  center_y_chars: 5.8         # 0.2 D below center: shedding trigger

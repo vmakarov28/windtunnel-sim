@@ -5,6 +5,7 @@ __pycache__/
 
 # run outputs — regenerate from scene + seed, don't version
 out/
+out3d/
 frames/
 failures/
 checkpoints/

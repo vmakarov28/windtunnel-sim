@@ -42,6 +42,37 @@ A-A vs A-B streaming patterns for Phase 4.
 - Work only in this repo; commit everything to the public GitHub repo
   `windtunnel-sim`.
 
+## Layout: 2D and 3D live side by side, SEPARATE by design
+
+The finished 2D program and the growing 3D program are independent
+packages that run and test separately, each with its own scenes and its
+own renderer ("custom designs"). Never fuse them into a dimension-generic
+solver; never make one import the other's solver code.
+
+| | 2D (D2Q9, complete) | 3D (D3Q19, active) |
+|---|---|---|
+| package | `lbm/` | `lbm3d/` |
+| scenes | `scenes/` | `scenes3d/` (require `span_chars`) |
+| entry | `run.py` | `run3d.py` |
+| tests | `tests/` | `tests3d/` |
+| output | `out/` | `out3d/` |
+| renderer | cinema.py presets | slice / three_pane / qcrit |
+
+The ONE shared module is `lbm/units.py` — the Reynolds triangle and its
+guard rails are dimension-blind by construction, and a single source of
+truth for the physics rails beats two copies that can drift. `pytest`
+runs both suites; `pytest tests` or `pytest tests3d` runs one.
+The `3d-d3q19` branch is HISTORICAL (pre-restructure) — 3D development
+happens here on main in `lbm3d/`.
+
+3D visualization design (lbm3d/render.py, all headless tensor ops):
+- `slice`: omega_z mid-span — the 2D-comparable read.
+- `three_pane`: slice + spanwise-velocity pane on an ABSOLUTE scale
+  (full color = 0.15 u_char) — an honest 3D-ness meter: blank while the
+  flow is 2D, alive with mode-A/B structure at higher Re.
+- `qcrit`: Q-criterion emission-absorption volume projection along the
+  span, colored by streamwise vorticity — the genuinely-3D shot.
+
 ## Phase status
 
 - Phase 0 (scaffold + units): done — tag `v0.0-scaffold`.
@@ -70,6 +101,20 @@ A-A vs A-B streaming patterns for Phase 4.
   AND runs live in a real WebGPU browser (all pipelines built, loop
   running). Only a pixel screenshot is unavailable (WebGPU canvas can't be
   captured by the in-app browser).
+
+## 3D status (lbm3d/, tag v0.8-3d-core)
+
+- D3Q19 core with every 2D lesson ported: anechoic sponge + equilibrium
+  velocity inlet (GPU-confirmed shed street; the old BCs never shed),
+  interior-only guards, Guo forcing (3D Poiseuille < 1% L2), moving lid
+  (3D Couette < 1%), Smagorinsky (inert on resolved flow, activates in
+  shear), momentum-exchange 3-vector force, offset-cylinder trigger,
+  local-Mach discipline in the scenes. 35 tests in tests3d/.
+- Next, in order: 3D validation gauntlet scripts + full-res GPU runs
+  (spanwise-periodic Poiseuille/Ghia-midplane/cylinder St+Cd); Zou-He +
+  regularized BCs for quantitative gates; fused D3Q19 Triton kernel
+  (~6.3 GLUPS ceiling at 152 B/cell); SGS high-Re demos (mode-A/B in the
+  qcrit view is the money shot); spanwise-periodic MH45 section.
 
 ## Practicalities
 

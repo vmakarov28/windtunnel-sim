@@ -1,0 +1,35 @@
+# Tiny development scene: NOT a validation case. Small enough to run on
+# CPU in seconds — used for end-to-end smoke tests of the full run loop.
+# Re = 30 (steady twin-vortex wake) because the tau rail correctly refuses
+# Re = 100 at this resolution (u=0.05, D=12 -> tau = 0.518 < 0.55).
+name: dev_smoke_re30
+description: >
+  Development smoke scene: cylinder at Re = 30, steady recirculating wake.
+
+physical:
+  char_length_m: 0.05      # D [m]
+  velocity_ms: 0.009       # -> Re = 30
+  nu_m2s: 1.5e-5
+
+lattice:
+  cells_per_char: 12
+  u_lat: 0.05              # -> tau = 0.56
+
+domain:
+  length_chars: 24         # nx = 288
+  height_chars: 15         # ny = 180
+  span_chars: 0.5          # nz = 6
+
+sgs: false
+
+boundaries:
+  inlet: equilibrium_ramp
+  outlet: anechoic_sponge
+  top_bottom: periodic
+  ramp_steps: 200
+  sponge_fraction: 0.08
+
+obstacle:
+  type: cylinder
+  center_x_chars: 6.0
+  center_y_chars: 7.5

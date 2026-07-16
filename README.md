@@ -1,42 +1,61 @@
 # windtunnel-sim
 
-A 2D GPU lattice-Boltzmann (D2Q9) wind tunnel, built from scratch for a
-dev-log video. Two goals, both mandatory: physically credible results
-(validated against Poiseuille/Ghia/cylinder benchmarks and XFOIL/OpenFOAM
-data) and constant visual output.
+A GPU lattice-Boltzmann wind tunnel built from scratch for a dev-log
+video, in two deliberately separate versions that run and test
+independently:
 
-(A 3D D3Q19 version lives on the `3d-d3q19` branch — runnable, tested;
-the 2D program ships first. Architecture ideas referenced from
-[LB-t](https://github.com/2b-t/LB-t) by Tobit Flatscher, MIT license —
-no code copied.)
+- **2D (D2Q9)** — `lbm/` + `run.py` + `scenes/` + `tests/`. Complete:
+  validated benchmarks, cinematography, a fused Triton kernel at 81% of
+  the bandwidth ceiling, Smagorinsky LES to Re=50k, the MH45 airfoil
+  sweep, and a WebGPU browser toy.
+- **3D (D3Q19)** — `lbm3d/` + `run3d.py` + `scenes3d/` + `tests3d/`.
+  Active: the core carries every lesson the 2D program paid for (see the
+  autopsies in `notes/NOTES.md`), with its own visualization design.
+
+Two goals, both mandatory: physically credible results (validated against
+Poiseuille/Ghia/cylinder benchmarks and XFOIL/OpenFOAM data) and constant
+visual output. Architecture ideas referenced from
+[LB-t](https://github.com/2b-t/LB-t) by Tobit Flatscher (MIT) — no code
+copied.
 
 ## Running
 
 Every experiment is a scene config plus a seed — nothing else:
 
 ```
-python run.py --scene cylinder_re100 --seed 0
-python run.py --list-scenes
+python run.py   --scene cylinder_re100     --seed 0        # 2D
+python run3d.py --scene cylinder_re100_dev --seed 0 \
+                --steps 26000 --preset qcrit                # 3D
+python run.py --list-scenes ; python run3d.py --list-scenes
 ```
 
 Scenes are defined in **physical units** (meters, m/s, viscosity of air)
-in `scenes/*.yaml` and converted to lattice units by `lbm/units.py`, which
+and converted to lattice units by `lbm/units.py` — the ONE module both
+versions share, because the Reynolds triangle is dimension-blind. It
 refuses unstable (`tau < 0.55` without a turbulence model) or too-
-compressible (`u_lat > 0.1`) configurations. Raw lattice parameters are
+compressible (`u_lat > 0.1`) configurations; raw lattice parameters are
 never set by hand.
+
+3D rendering is headless tensor ops, no mesh/GL dependencies: `slice`
+(mid-span vorticity), `three_pane` (slice + a spanwise-velocity pane on
+an absolute scale — an honest "3D-ness meter" that reads blank while the
+flow is two-dimensional), and `qcrit` (Q-criterion volume projection
+colored by streamwise vorticity — the vortex-core shot).
 
 ## Layout
 
-- `lbm/` — core: `units.py` (Reynolds triangle), `solver.py` (readable
-  D2Q9 BGK reference), `fused.py` (Triton kernel), `cinema.py` (tracers/
-  dye/camera), `airfoil.py` (Selig loader + rasterizer)
-- `scenes/` — experiment configs, physical-units-first
-- `scripts/` — run/benchmark/render/sweep tooling
-- `validation/` — benchmark gauntlet (Poiseuille, lid-driven cavity,
-  cylinder) + airfoil polars, all producing publication-style figures
+- `lbm/` — 2D core: `units.py` (shared Reynolds triangle), `solver.py`
+  (readable D2Q9 BGK reference), `fused.py` (Triton kernel), `cinema.py`
+  (tracers/dye/camera), `airfoil.py` (Selig loader + rasterizer)
+- `lbm3d/` — 3D core: D3Q19 `solver.py` (BGK + Guo + Smagorinsky + moving
+  lid + momentum exchange), `render.py` (slice / three_pane / qcrit)
+- `scenes/`, `scenes3d/` — experiment configs, physical-units-first
+- `scripts/` — run/benchmark/render/sweep tooling (2D and 3D)
+- `validation/` — benchmark gauntlet + airfoil polars, publication figures
 - `notes/NOTES.md` — dev diary: every bug, instability, and diagnosis,
   dated (it doubles as the video script)
-- `tests/` — `python -m pytest` (61 tests; CPU on Windows, GPU in WSL2)
+- `tests/`, `tests3d/` — `python -m pytest` runs both (96 tests); each
+  suite also runs alone
 
 ## Milestones
 

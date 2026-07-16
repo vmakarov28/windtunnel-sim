@@ -10,4 +10,6 @@ dev = ["pytest"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-testpaths = ["tests"]
+# Both suites run by default; run either alone with `pytest tests` (2D)
+# or `pytest tests3d` (3D) — the versions are separate on purpose.
+testpaths = ["tests", "tests3d"]

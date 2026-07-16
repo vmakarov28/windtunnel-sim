@@ -557,3 +557,62 @@ form live; the viscosity slider ramping from laminar to turbulent in real
 time; a split of the browser toy next to the Python beauty clip of the
 same flow — "the exact same kernel, one in CUDA, one in your tab."
 
+
+---
+
+## 2026-07-14 — 3D moves in: lbm3d/ beside lbm/, separate by design
+
+Restructure (user-directed): the 3D program no longer lives on a branch.
+`lbm3d/` + `scenes3d/` + `run3d.py` + `tests3d/` now sit beside the
+finished 2D program on main — two versions that run and test separately
+(`pytest tests` / `pytest tests3d`; 61 + 35 = 96 combined), never share
+solver code, and each carry their own scene and renderer designs. The ONE
+shared module is `lbm/units.py`: the Reynolds triangle is dimension-blind
+by construction, and one source of truth for the physics rails beats two
+copies that can drift. The `3d-d3q19` branch is now historical.
+
+The move was also an upgrade pass. The 3D solver merged in the remaining
+validated 2D features it lacked — moving lid (3D Couette linear profile
+< 1%), wall_x for the cavity, and Smagorinsky (same Hou closed form; the
+formula is dimension-independent, now with the 6-component Pi_neq;
+verified inert on resolved Taylor-Green, active in shear). Review of the
+branch code found and fixed two latent renderer bugs before they could
+bite: the >16M-element CUDA quantile crash (the exact failure that killed
+the first 2D Re=50k render — the FULL 3D cylinder is 36.5M cells, so it
+WOULD have crashed on its first big run) and frame numbering that
+restarted at zero across --resume (silent frame overwrites).
+
+**How 3D is visualized** (lbm3d/render.py, all headless tensor ops):
+
+1. `slice` — omega_z on the mid-span plane. The 2D-comparable read.
+2. `three_pane` — the slice stacked over an x-z pane of SPANWISE velocity
+   u_z at mid-height: an honest 3D-ness meter, because u_z is identically
+   zero for 2D flow.
+3. `qcrit` — Q-criterion (Q = (||Omega||^2 - ||S||^2)/2, vortex cores)
+   as an emission-absorption volume projection along the span, colored by
+   streamwise vorticity omega_x. Counter-rotating mode-A/B vortex pairs
+   will render as red/blue braids; solids composite by opacity, so
+   occlusion falls out of the math. Verified against analytic fields:
+   rigid rotation gives Q = omega^2 exactly, pure shear gives Q = 0.
+
+**A meter must not grade on a curve.** The first three_pane render showed
+loud checkerboard "structure" in the u_z pane at Re = 100 — where the
+flow must be 2D. Measured: max|u_z| = 1.9e-6, i.e. 0.002% of u_char,
+uncorrelated fp32 roundoff — but the pane self-normalized to its own
+99.5th percentile, amplifying numerical dust into fake physics. Fix: the
+pane now uses an ABSOLUTE scale (full color at 0.15 u_char, the amplitude
+of real mode-A structure), locked in by a regression test: a 2D flow must
+render blank, injected mode-A-scale u_z must saturate. Same family as the
+interior-guard lesson: a diagnostic that defines its own reference will
+always show you something.
+
+GPU confirmation: resumed the shed-street checkpoint; `qcrit` renders the
+street's cores as discrete volumes (neutral-colored — omega_x ~ 0 because
+the flow IS 2D, which is the correct reading), and the three_pane meter
+reads blank below a healthy street. Applied the local-Mach lesson to the
+3D airfoil scene while touching it (u_lat 0.1 -> 0.05, tau 0.5015).
+
+**Footage:** the three_pane at Re = 100 (meter blank) held next to the
+same view at higher Re once SGS runs land (meter alight) — the cleanest
+possible on-camera explanation of what "the wake goes 3D" means; the
+qcrit street; and the moment the omega_x coloring first shows braids.
