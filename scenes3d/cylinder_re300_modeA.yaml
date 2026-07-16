@@ -1,0 +1,41 @@
+# Cylinder at Re = 300 — the "wake goes 3D" showcase (mode A/B regime).
+# Above Re ~ 190 the 2D vortex street is unstable to spanwise
+# perturbations: mode A (wavelength ~3-4 D) and mode B (~1 D) grow
+# streamwise vortex braids. The 6 D periodic span fits both. THIS is the
+# run the 3D visualization design exists for: the three_pane spanwise
+# meter comes alive and qcrit shows red/blue omega_x braids.
+# u_lat = 0.05 per the local-Mach lesson; tau = 0.516 needs Smagorinsky
+# (near-inert at this resolution, but the rail is the rail).
+name: cylinder_re300_modeA
+description: >
+  Circular cylinder at Re = 300, spanwise-periodic span of 6 D — the
+  mode-A/B secondary-instability regime. Characteristic length = diameter.
+
+physical:
+  char_length_m: 0.05      # D [m]
+  velocity_ms: 0.09        # -> Re = U*D/nu = 300
+  nu_m2s: 1.5e-5
+
+lattice:
+  cells_per_char: 32       # D = 32 cells
+  u_lat: 0.05              # -> tau = 0.516 (needs sgs)
+
+domain:
+  length_chars: 20         # nx = 640
+  height_chars: 15         # ny = 480; blockage 6.7%
+  span_chars: 6            # nz = 192: fits mode A (~3-4 D) and mode B (~1 D)
+
+sgs: true
+smagorinsky_cs: 0.14
+
+boundaries:
+  inlet: equilibrium_ramp
+  outlet: anechoic_sponge
+  top_bottom: periodic
+  ramp_steps: 2000
+  sponge_fraction: 0.08
+
+obstacle:
+  type: cylinder
+  center_x_chars: 5.0         # 5 D from inlet -> 15 D of wake
+  center_y_chars: 7.3         # 0.2 D below center: shedding trigger

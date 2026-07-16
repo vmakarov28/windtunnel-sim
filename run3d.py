@@ -46,6 +46,10 @@ def main(argv: list[str] | None = None) -> int:
                              "three_pane = slice + spanwise-velocity pane "
                              "(the 3D-ness meter); qcrit = Q-criterion "
                              "volume projection (the genuinely-3D shot)")
+    parser.add_argument("--solver", default="reference",
+                        choices=["reference", "fused"],
+                        help="reference = readable PyTorch; fused = Triton "
+                             "(one kernel launch per step)")
     parser.add_argument("--list-scenes", action="store_true")
     args = parser.parse_args(argv)
 
@@ -71,8 +75,12 @@ def main(argv: list[str] | None = None) -> int:
     from lbm3d.render import FrameWriter
     from lbm3d.solver import SimulationBlowup, Solver, capture_failure
 
-    solver = Solver.from_scene(scene, seed=args.seed, device=args.device,
-                               ramp=not args.no_ramp)
+    if args.solver == "fused":
+        from lbm3d.fused import FusedSolver as SolverCls
+    else:
+        SolverCls = Solver
+    solver = SolverCls.from_scene(scene, seed=args.seed, device=args.device,
+                                  ramp=not args.no_ramp)
     print(f"  device     {solver.device}   preset {args.preset}"
           + ("   (IMPULSIVE START — no inlet ramp)" if args.no_ramp else ""))
 
