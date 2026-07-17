@@ -110,11 +110,15 @@ happens here on main in `lbm3d/`.
   (3D Couette < 1%), Smagorinsky (inert on resolved flow, activates in
   shear), momentum-exchange 3-vector force, offset-cylinder trigger,
   local-Mach discipline in the scenes. 35 tests in tests3d/.
-- Next, in order: 3D validation gauntlet scripts + full-res GPU runs
-  (spanwise-periodic Poiseuille/Ghia-midplane/cylinder St+Cd); Zou-He +
-  regularized BCs for quantitative gates; fused D3Q19 Triton kernel
-  (~6.3 GLUPS ceiling at 152 B/cell); SGS high-Re demos (mode-A/B in the
-  qcrit view is the money shot); spanwise-periodic MH45 section.
+- 3D VALIDATED (tag v0.9-3d-validated): gauntlet passes — Poiseuille3D
+  L2 0.117% (spanwise-invariant to the bit), Ghia mid-plane 0.41%/0.63%,
+  full-res cylinder St 0.1714 / Cd 1.443 with |Cz|/Cd = 8e-6 (the
+  2D-ness proof). Fused D3Q19 kernel: 4.2 GLUPS on 36.5M cells (67% of
+  ceiling, 23x reference), SGS ~free. Re=300 mode-A showcase: braids in
+  qcrit, max|u_z| = 60% u_char (vs 0.002% at Re=100) — the wake goes 3D
+  on camera (out3d/re300*).
+- Next: Zou-He + regularized BCs (quantitative refinement), 3D
+  cinematography extensions, spanwise-periodic MH45 section sweep.
 
 ## Practicalities
 

@@ -616,3 +616,48 @@ reads blank below a healthy street. Applied the local-Mach lesson to the
 same view at higher Re once SGS runs land (meter alight) — the cleanest
 possible on-camera explanation of what "the wake goes 3D" means; the
 qcrit street; and the moment the omega_x coloring first shows braids.
+
+---
+
+## 2026-07-14 — 3D validated, and the wake goes 3D (v0.9-3d-validated)
+
+**The 3D gauntlet passes — all three gates, first try** (the 2D program
+paid the tuition; 3D got the education):
+
+- Poiseuille3D: L2 = **0.117%** vs the analytic parabola, and the
+  profile is spanwise-invariant to the BIT (std = 0.0).
+- Ghia mid-plane on the spanwise-periodic cavity: **0.41% / 0.63%**
+  (u / v centerlines), spanwise deviation 1.4e-6.
+- Full-resolution cylinder (900x450x90 = 36.5M cells, fused kernel):
+  **St = 0.1714, Cd = 1.443 ± 0.008** — inside the 2D bands, as they
+  must be at Re = 100 — plus the new honesty gate: **|Cz|/Cd = 8e-6**.
+  A 3D solver borrowing 2D reference data has to PROVE the flow stayed
+  two-dimensional. It did, eight parts per million of spanwise force.
+  (St runs a hair above the 2D program's 0.1667 — D = 30 vs 40 cells of
+  resolution; both in band, both honest.)
+
+**And then the reason the third dimension exists.** cylinder_re300_modeA:
+Re = 300, 59M cells, 200k steps at **3.76 GLUPS sustained including
+Q-criterion volume rendering** — the run this whole visualization design
+was built for. Above Re ~ 190 the flat vortex street is unstable to
+spanwise perturbation (Williamson's modes A and B), and it happened on
+camera:
+
+- the qcrit projection shows saturated red/blue streamwise-vorticity
+  braids wrapped around every core — compare the same view at Re = 100,
+  where the cores render colorless because omega_x ~ 0;
+- measured from the final state: **max|u_z| = 60% of u_char** and
+  p99 = 17%, versus 0.002% at Re = 100. The spanwise velocity grew by a
+  factor of ~30,000. The three_pane meter (absolute scale, full color at
+  15% u_char) goes from provably blank to saturated — the cleanest
+  on-camera definition of "the wake went 3D" I can imagine.
+
+Performance note for the record: the fused D3Q19 kernel benchmarks at
+4.2 GLUPS on the 36.5M-cell grid (67% of the 6.3 GLUPS ceiling, 23x the
+readable reference) and Smagorinsky costs ~1% (the constexpr-gated
+Pi_neq pass re-reads L2-resident lines, as designed).
+
+**Footage:** the Re=100-vs-Re=300 qcrit pair (colorless cores vs braids);
+the three_pane meter waking up; the guards.csv tau_eff column quietly
+rising as the wake transitions — the turbulence model reporting the
+physics changing under it.
