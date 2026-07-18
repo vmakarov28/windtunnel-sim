@@ -17,7 +17,7 @@ from lbm.units import UnitError
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="3D GPU lattice-Boltzmann wind tunnel (D3Q19)"
+        description="2D GPU lattice-Boltzmann wind tunnel (D2Q9)"
     )
     parser.add_argument("--scene", help="scene name (a file in scenes/)")
     parser.add_argument("--seed", type=int, help="RNG seed (required for runs)")
