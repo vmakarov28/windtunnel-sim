@@ -96,11 +96,14 @@ happens here on main in `lbm3d/`.
   user drops data/xfoil_mh45_re20k.csv (alpha,cl,cd) — review-time step.
 - Phase 7 (WebGPU browser toy): done — tag `v0.7-webgpu`. Single WGSL
   compute shader (D2Q9 BGK+SGS) in `web/`, mouse-drawn obstacles,
-  vorticity + tracers, GitHub Pages deploy workflow. Verified headless via
-  wgpu-py (shaders compile; step kernel holds freestream + sheds a wake)
-  AND runs live in a real WebGPU browser (all pipelines built, loop
-  running). Only a pixel screenshot is unavailable (WebGPU canvas can't be
-  captured by the in-app browser).
+  vorticity + tracers, GitHub Pages deploy workflow. Verification is
+  self-contained: `web/shader_source.py` extracts WGSL straight from
+  shaders.js (no node/_build step — that pipeline once broke silently
+  when the gitignored _build/ was cleaned; see NOTES 2026-07-17), and
+  tests/test_web.py runs extraction + naga compile + on-GPU physics
+  checks inside the main pytest suite (Windows wgpu → D3D12). Verified
+  live with pixels: vorticity + speed fields render, mouse-drawn
+  obstacles shed wakes, GPU errors surface red in the status line.
 
 ## 3D status (lbm3d/, tag v0.8-3d-core)
 

@@ -49,10 +49,24 @@ async function main() {
     return;
   }
   const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) { status.textContent = "No WebGPU adapter."; return; }
+  if (!adapter) {
+    status.textContent = "No WebGPU adapter.";
+    status.className = "err";
+    return;
+  }
   const device = await adapter.requestDevice();
-  device.addEventListener("uncapturederror", (e) =>
-    console.error("WebGPU error:", e.error.message));
+  // Surface GPU failures ON SCREEN, not just in the console — a black
+  // canvas with a green "running" line is the worst possible failure mode
+  // for screen recording.
+  const fail = (msg) => {
+    console.error("WebGPU:", msg);
+    status.textContent = `GPU error — ${msg}`;
+    status.className = "err";
+  };
+  device.addEventListener("uncapturederror", (e) => fail(e.error.message));
+  device.lost.then((info) => {
+    if (info.reason !== "destroyed") fail(`device lost (${info.message})`);
+  });
 
   const canvas = document.getElementById("view");
   canvas.width = NX; canvas.height = NY;
@@ -261,4 +275,9 @@ async function main() {
   requestAnimationFrame(loop);
 }
 
-main();
+main().catch((e) => {
+  console.error(e);
+  const status = document.getElementById("status");
+  status.textContent = `init failed — ${e.message}`;
+  status.className = "err";
+});

@@ -661,3 +661,55 @@ Pi_neq pass re-reads L2-resident lines, as designed).
 the three_pane meter waking up; the guards.csv tau_eff column quietly
 rising as the wake transitions — the turbulence model reporting the
 physics changing under it.
+
+## 2026-07-17 — The tests that passed on nothing (Phase 7 repair)
+
+Report from the field: "the WebGPU toy is not passing the tests and does
+not work." Diagnosis in one line: **the toy was fine; its verification
+had quietly stopped verifying.**
+
+The old flow was `node dump_wgsl.mjs` -> `web/_build/*.wgsl` ->
+`validate_wgsl.py` compiles the dumps. `_build/` is gitignored (it is
+generated output), and during the 3d-d3q19 branch housekeeping it got
+deleted. After that:
+
+- `validate_step.py` crashed with FileNotFoundError — the honest failure;
+- `validate_wgsl.py` globbed zero files, compiled zero shaders, and
+  **exited 0**. A test suite that passes on an empty input set is not a
+  test suite; it is a mood.
+
+Two design mistakes, both mine: a manual build step between the source
+and its tests (anything manual will eventually not have been run), and a
+validator whose empty case looked identical to success.
+
+The fix removes the build step instead of repairing it:
+
+- `web/shader_source.py` extracts the WGSL template literals straight
+  out of `shaders.js` — the file the browser actually runs — and
+  replicates the `LATTICE +` concatenation. Raises if any of the four
+  shaders goes missing, so the empty-glob false pass is structurally
+  impossible now.
+- Both validators import the extractor; `dump_wgsl.mjs` is demoted to a
+  debugging aid.
+- `tests/test_web.py` puts the toy in the main suite: extraction sanity,
+  naga compilation, and the two on-GPU physics gates (empty tunnel holds
+  freestream to 1e-4; cylinder accelerates 1.4x and sheds). Windows
+  wgpu-py drives the RTX 5080 through D3D12 directly — all six tests in
+  under 2 s, no WSL needed. Suite is now 102.
+- `main.js` gained on-screen failure surfacing: device.lost and
+  uncapturederror paint the status line red instead of leaving a black
+  canvas under a green "running" label — the worst possible failure mode
+  for screen recording.
+
+And a bonus discovery while re-verifying live: the in-app browser can
+NOW screenshot the WebGPU canvas (it couldn't at Phase 7 sign-off). So
+the toy has its full pixel proof at last: the seeded cylinder shedding a
+red/blue street in vorticity mode, the inferno speed field with dark
+vortex cores and tracer speckle, and mouse-drawn blobs immediately
+growing their own wakes into the mix. `drawImage` readback still fails
+(alpha stays 0 — capture path, not the app), which is worth remembering:
+"the screenshot is black" and "the canvas is black" are different claims
+with different tests.
+
+**Footage:** the empty-glob validator exiting 0 (terminal), then the new
+pytest line `6 passed in 1.95s`; the three live screenshots.
