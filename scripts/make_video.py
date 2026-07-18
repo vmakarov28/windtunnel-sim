@@ -35,6 +35,10 @@ def main() -> int:
 
     frames = Path(args.frames_dir)
     n = len(list(frames.glob("frame_*.png")))
+    if n == 0 and (frames / "frames").is_dir():
+        # accept the run dir too — out/<scene>-seed<n>/ holds frames/
+        frames = frames / "frames"
+        n = len(list(frames.glob("frame_*.png")))
     if n == 0:
         print(f"no frames in {frames}", file=sys.stderr)
         return 1
