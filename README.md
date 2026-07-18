@@ -20,6 +20,11 @@ copied.
 
 ## Running
 
+**New here? [USAGE.md](USAGE.md) is the practical guide** — setup, your
+first run, custom shapes (including a worked NACA 4412 example with any
+`.dat` airfoil or the `scripts/make_naca.py` generator), rendering
+presets, the 3D tunnel, the browser toy, and troubleshooting.
+
 Every experiment is a scene config plus a seed — nothing else:
 
 ```
