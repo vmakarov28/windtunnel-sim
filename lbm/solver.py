@@ -88,6 +88,10 @@ class Solver:
         init_noise: float = 1e-3,       # *u_char, seeds the shedding asymmetry
         sgs: bool = False,              # Smagorinsky subgrid model (Phase 5)
         cs_smag: float = 0.14,          # Smagorinsky constant, ~0.1-0.17
+        collision: str = "bgk",         # "bgk" | "trt" (Phase 8 accuracy)
+        curved_geom: tuple | None = None,  # ("circle",cx,cy,r) |
+                                           # ("polygon", (N,2) cell coords):
+                                           # enables Bouzidi links (Phase 8)
         scene_name: str = "adhoc",
     ):
         self.device = pick_device(device)
@@ -105,6 +109,20 @@ class Solver:
         self.omega = 1.0 / self.tau
         self.sgs = bool(sgs)
         self.cs_smag = float(cs_smag)
+
+        # -- collision operator (Phase 8) ---------------------------------
+        # "trt" splits each opposite pair into even/odd parts. The even
+        # rate is 1/tau exactly as BGK (it alone sets the viscosity); the
+        # odd rate is SOLVED from the magic parameter
+        #   LAMBDA = (tau+ - 1/2)(tau- - 1/2) = 3/16
+        # — the derived value (Ginzburg; Kruger sec. 10.6) for which a
+        # halfway bounce-back wall sits at the halfway point at ANY
+        # viscosity. BGK's wall drifts with tau; that drift is an error
+        # term, and 3/16 deletes it. Not a tuned constant.
+        if collision not in ("bgk", "trt"):
+            raise ValueError(f"collision = {collision!r} (bgk|trt)")
+        self.collision = collision
+        self.lambda_trt = 3.0 / 16.0
 
         # -- anechoic sponge profile (see module docs, point 6) -----------
         # sigma rises smoothly 0 -> sponge_strength over the last
@@ -172,6 +190,20 @@ class Solver:
                 idx = up_obs.reshape(-1).nonzero(as_tuple=False).squeeze(1)
                 self._force_idx[q] = idx if idx.numel() else None
 
+        # Bouzidi curved-boundary links (Phase 8): for obstacle links,
+        # replace "the wall is at the halfway point" with the TRUE wall
+        # distance along each link, measured against the analytic circle
+        # or the transformed airfoil polygon — the same geometry the mask
+        # was rasterized from. Links whose probe fails (mask/geometry
+        # mismatch at staircase corners, thin slivers) stay on the
+        # halfway path and are counted in bouzidi_fallback.
+        self._bz: list[dict | None] | None = None
+        self.bouzidi_links = 0
+        self.bouzidi_fallback = 0
+        if curved_geom is not None and obstacle_mask is not None:
+            self._bz = self._build_bouzidi_links(obstacle_mask.cpu(),
+                                                 curved_geom)
+
         # -- initial condition: equilibrium + seeded noise -----------------
         # Open scenes start at the (ramped) inlet velocity; closed boxes at
         # rest. Tiny seeded noise breaks the wake's metastable symmetry so
@@ -199,6 +231,9 @@ class Solver:
         b = scene.raw.get("boundaries", {})
         obstacle = scene.raw.get("obstacle")
         mask = build_obstacle_mask(scene, obstacle) if obstacle else None
+        curved = None
+        if obstacle and obstacle.get("curved_bc"):
+            curved = obstacle_geometry(scene, obstacle)
         top_bottom = b.get("top_bottom", "periodic")
         if top_bottom not in ("periodic", "bounce_back"):
             raise NotImplementedError(f"top_bottom = {top_bottom!r}")
@@ -215,6 +250,8 @@ class Solver:
             lid_velocity=scene.units.u_lat if is_cavity else 0.0,
             sgs=scene.units.sgs,
             cs_smag=float(scene.raw.get("smagorinsky_cs", 0.14)),
+            collision=scene.raw.get("collision", "bgk"),
+            curved_geom=curved,
             scene_name=scene.name,
         )
 
@@ -224,6 +261,91 @@ class Solver:
         if self.ramp_steps <= 0 or step >= self.ramp_steps:
             return 1.0
         return 0.5 - 0.5 * math.cos(math.pi * step / self.ramp_steps)
+
+    # -- Phase 8: curved boundaries ------------------------------------
+    @staticmethod
+    def _wall_fraction(px: torch.Tensor, py: torch.Tensor,
+                       dx: float, dy: float, geom: tuple) -> torch.Tensor:
+        """Fraction s in (0,1] along the link p -> p+d where the true
+        surface sits; +inf where the probe misses (caller falls back)."""
+        inf = torch.full_like(px, float("inf"))
+        if geom[0] == "circle":
+            _, cx, cy, r = geom
+            a = dx * dx + dy * dy
+            vx, vy = px - cx, py - cy
+            b = vx * dx + vy * dy
+            c = vx * vx + vy * vy - r * r
+            disc = b * b - a * c
+            s = (-b - disc.clamp(min=0.0).sqrt()) / a
+            return torch.where((disc >= 0) & (s > 0), s, inf)
+        if geom[0] == "polygon":
+            verts = geom[1]
+            va, vb = verts[:-1], verts[1:]
+            eab = vb - va                                  # (M,2)
+            keep = (eab * eab).sum(1) > 1e-12              # drop TE dup
+            va, eab = va[keep], eab[keep]
+            denom = dx * eab[:, 1] - dy * eab[:, 0]        # cross(d, eab)
+            apx = va[:, 0][None, :] - px[:, None]          # (L,M)
+            apy = va[:, 1][None, :] - py[:, None]
+            with_np = denom.abs() > 1e-12
+            denom_safe = torch.where(with_np, denom,
+                                     torch.ones_like(denom))
+            s = (apx * eab[:, 1] - apy * eab[:, 0]) / denom_safe
+            t = (apx * dy - apy * dx) / denom_safe
+            valid = with_np[None, :] & (t >= 0) & (t <= 1) \
+                & (s > 1e-4) & (s <= 1.0)
+            s = torch.where(valid, s, torch.full_like(s, float("inf")))
+            return s.min(dim=1).values
+        raise ValueError(f"unknown geometry {geom[0]!r}")
+
+    def _build_bouzidi_links(self, obs: torch.Tensor,
+                             geom: tuple) -> list[dict | None]:
+        """Per direction: split obstacle boundary links into the two
+        Bouzidi cases by wall fraction s (q in the literature):
+          s <  1/2: interpolate with the next fluid cell AWAY from the
+                    wall — needs that neighbour to exist and be fluid;
+          s >= 1/2: interpolate with the cell's own opposite population.
+        s = 1/2 reproduces halfway bounce-back exactly (tested)."""
+        mask_flat = self.mask.cpu().reshape(-1)
+        ny = self.ny
+        out: list[dict | None] = [None] * Q
+        for q in range(1, Q):
+            up_obs = torch.roll(obs, shifts=E[q], dims=(0, 1)) \
+                & ~self.mask.cpu()
+            idx = up_obs.reshape(-1).nonzero(as_tuple=False).squeeze(1)
+            if not idx.numel():
+                continue
+            self.bouzidi_links += int(idx.numel())
+            px = (idx // ny).float() + 0.5
+            py = (idx % ny).float() + 0.5
+            dx, dy = float(-E[q][0]), float(-E[q][1])  # toward the solid
+            s = self._wall_fraction(px, py, dx, dy, geom)
+            valid = torch.isfinite(s) & (s > 1e-3) & (s <= 1.0)
+            # case A needs the next cell away from the wall to be fluid
+            ni = (idx // ny) + E[q][0]
+            nj = (idx % ny) + E[q][1]
+            in_rng = (ni >= 0) & (ni < self.nx) & (nj >= 0) & (nj < ny)
+            nb = ni.clamp(0, self.nx - 1) * ny + nj.clamp(0, ny - 1)
+            nb_ok = in_rng & ~mask_flat[nb]
+            case_a = valid & (s < 0.5) & nb_ok
+            case_b = valid & (s >= 0.5)
+            self.bouzidi_fallback += int((~(case_a | case_b)).sum())
+            entry: dict = {"idxA": None, "idxB": None}
+            if bool(case_a.any()):
+                sa = s[case_a]
+                entry["idxA"] = idx[case_a].to(self.device)
+                entry["nbA"] = nb[case_a].to(self.device)
+                entry["cA1"] = (2.0 * sa).float().to(self.device)
+                entry["cA2"] = (1.0 - 2.0 * sa).float().to(self.device)
+            if bool(case_b.any()):
+                sb = s[case_b]
+                entry["idxB"] = idx[case_b].to(self.device)
+                entry["cB1"] = (0.5 / sb).float().to(self.device)
+                entry["cB2"] = ((2.0 * sb - 1.0) / (2.0 * sb)).float() \
+                    .to(self.device)
+            if entry["idxA"] is not None or entry["idxB"] is not None:
+                out[q] = entry
+        return out
 
     def macroscopics(self) -> tuple[torch.Tensor, torch.Tensor]:
         """rho (nx,ny) and u (2,nx,ny). With Guo forcing, u includes the
@@ -298,20 +420,57 @@ class Solver:
             omega = 1.0 / tau_eff
             self.last_tau_eff_max = float(tau_eff.max())
 
-        for q in range(Q):
-            ex, ey = E[q]
-            cu = torch.zeros_like(usq)
-            if ex: cu += ex * u[0]
-            if ey: cu += ey * u[1]
-            cu *= 3.0
-            feq = W[q] * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
-            f[q] -= omega * (f[q] - feq)     # BGK; omega is a field with SGS
+        if self.collision == "trt":
+            # TRT (Kruger sec. 10.6): even parts of each opposite pair
+            # relax at omega — EXACTLY the BGK rate, it alone sets the
+            # viscosity — and odd parts at omega_m solved from the magic
+            # parameter. f2 doubles as feq scratch: streaming fully
+            # overwrites it right after.
+            feq = f2
+            self._write_equilibrium(feq, rho, u)
+            tau_p = 1.0 / omega            # float or field (with SGS)
+            omega_m = 1.0 / (0.5 + self.lambda_trt / (tau_p - 0.5))
+            f[0] -= omega * (f[0] - feq[0])
+            for q in range(1, Q):
+                qb = OPP[q]
+                if qb < q:
+                    continue               # each pair exactly once
+                sp = 0.5 * (f[q] + f[qb])
+                sm = 0.5 * (f[q] - f[qb])
+                ep = 0.5 * (feq[q] + feq[qb])
+                em = 0.5 * (feq[q] - feq[qb])
+                dp = omega * (sp - ep)
+                dm = omega_m * (sm - em)
+                f[q] -= dp + dm
+                f[qb] -= dp - dm
             if self.has_force:
-                # Guo source (eq. 6.25): (1 - omega/2) w_q *
-                #   [3(e-u).F + 9(e.u)(e.F)]   with (e.u) = cu/3
-                eF = ex * fx + ey * fy
-                s = 3.0 * (eF - uF) + 3.0 * cu * eF
-                f[q] += (1.0 - 0.5 * omega) * W[q] * s
+                # Guo split for TRT: the source term's odd-in-e part
+                # (3 e.F) takes omega_m, the even part takes omega.
+                for q in range(Q):
+                    ex, ey = E[q]
+                    cu = torch.zeros_like(usq)
+                    if ex: cu += ex * u[0]
+                    if ey: cu += ey * u[1]
+                    cu *= 3.0
+                    eF = ex * fx + ey * fy
+                    f[q] += (1.0 - 0.5 * omega) * W[q] \
+                        * (3.0 * cu * eF - 3.0 * uF) \
+                        + (1.0 - 0.5 * omega_m) * W[q] * (3.0 * eF)
+        else:
+            for q in range(Q):
+                ex, ey = E[q]
+                cu = torch.zeros_like(usq)
+                if ex: cu += ex * u[0]
+                if ey: cu += ey * u[1]
+                cu *= 3.0
+                feq = W[q] * rho * (1.0 + cu + 0.5 * cu * cu - 1.5 * usq)
+                f[q] -= omega * (f[q] - feq)  # BGK; omega is a field w/ SGS
+                if self.has_force:
+                    # Guo source (eq. 6.25): (1 - omega/2) w_q *
+                    #   [3(e-u).F + 9(e.u)(e.F)]   with (e.u) = cu/3
+                    eF = ex * fx + ey * fy
+                    s = 3.0 * (eF - uF) + 3.0 * cu * eF
+                    f[q] += (1.0 - 0.5 * omega) * W[q] * s
 
         # 2b. anechoic sponge: blend toward feq(rho=1, u_in) in the last
         # sponge_fraction of the domain (module docs, point 6).
@@ -340,6 +499,31 @@ class Solver:
             lidx = self._lid_idx[q]
             if lidx is not None:  # moving wall adds momentum (eq. 5.27)
                 f2[q].view(-1)[lidx] += self._lid_corr[q]
+
+        # 4a. Bouzidi interpolated bounce-back (Phase 8): overwrite the
+        # halfway reflection on links whose true wall fraction s is known
+        # (Bouzidi et al. 2001, linear scheme):
+        #   s <  1/2:  f_q(x) = 2s f*_qb(x) + (1-2s) f*_qb(x + e_q)
+        #   s >= 1/2:  f_q(x) = f*_qb(x)/(2s) + (2s-1)/(2s) f*_q(x)
+        # At s = 1/2 both reduce to the halfway rule above. This is what
+        # deletes the staircase: the wall acts at its true position on
+        # every link instead of at the cell midpoint.
+        if self._bz is not None:
+            for q in range(1, Q):
+                bz = self._bz[q]
+                if bz is None:
+                    continue
+                qb = OPP[q]
+                fq = f[q].view(-1)
+                fqb = f[qb].view(-1)
+                out = f2[q].view(-1)
+                if bz["idxA"] is not None:
+                    out[bz["idxA"]] = bz["cA1"] * fqb[bz["idxA"]] \
+                        + bz["cA2"] * fqb[bz["nbA"]]
+                if bz["idxB"] is not None:
+                    out[bz["idxB"]] = bz["cB1"] * fqb[bz["idxB"]] \
+                        + bz["cB2"] * fq[bz["idxB"]]
+
         if self._solid_idx.numel():
             f2.view(Q, -1)[:, self._solid_idx] = 0.0  # solids hold no fluid
 
@@ -502,6 +686,29 @@ def build_obstacle_mask(scene: Scene, obstacle: dict) -> torch.Tensor:
             supersample=int(obstacle.get("edge_supersample", 4)),
         )
     raise NotImplementedError(f"obstacle type {kind!r}")
+
+
+def obstacle_geometry(scene: Scene, obstacle: dict) -> tuple:
+    """The TRUE surface for Bouzidi curved-boundary links (Phase 8) —
+    built from the same parameters as the mask, so the wall the mask
+    sees and the wall the interpolation sees are the same wall."""
+    kind = obstacle.get("type")
+    n = scene.units.cells
+    if kind == "cylinder":
+        return ("circle",
+                obstacle["center_x_chars"] * n,
+                obstacle["center_y_chars"] * n,
+                n / 2.0)
+    if kind == "airfoil_dat":
+        from .airfoil import load_selig, transform_polygon
+        _, poly = load_selig(obstacle["dat_file"])
+        verts = transform_polygon(
+            poly, n,
+            obstacle["center_x_chars"] * n,
+            obstacle["center_y_chars"] * n,
+            float(obstacle.get("alpha_deg", 0.0)))
+        return ("polygon", verts)
+    raise NotImplementedError(f"curved_bc for obstacle type {kind!r}")
 
 
 def capture_failure(

@@ -59,7 +59,7 @@ colored by streamwise vorticity — the vortex-core shot).
 - `validation/` — benchmark gauntlet + airfoil polars, publication figures
 - `notes/NOTES.md` — dev diary: every bug, instability, and diagnosis,
   dated (it doubles as the video script)
-- `tests/`, `tests3d/` — `python -m pytest` runs both (96 tests); each
+- `tests/`, `tests3d/` — `python -m pytest` runs both (112 tests); each
   suite also runs alone
 
 ## Milestones
@@ -77,6 +77,7 @@ for b-roll).
 | v0.5-sgs | 5 — Smagorinsky LES | stable to Re=50k (52M cells), k⁻³ wake spectra |
 | v0.6-airfoil | 6 — MH45 airfoil sweep | lift slope 6.76/rad (within 8% of 2π) |
 | v0.7-webgpu | 7 — WebGPU browser toy | the same kernel in one WGSL compute shader ([`web/`](web/)) |
+| v0.10-accuracy | 8 — TRT + curved boundaries | wall drift ÷17 at τ=3 (Λ=3/16, derived); Bouzidi walls: s=½ ≡ the old rule, bit-tested |
 
 The [`web/`](web/) toy runs the same D2Q9 BGK+Smagorinsky kernel in the
 browser — draw obstacles with the mouse. A 3D D3Q19 implementation lives

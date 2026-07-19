@@ -60,6 +60,24 @@ def naca4(code: str = "2412", n: int = 80) -> torch.Tensor:
     return torch.cat([upper.flip(0), lower[1:]], 0)  # TE->LE->TE loop
 
 
+def transform_polygon(
+    poly: torch.Tensor,           # (N,2) unit-chord loop
+    chord_cells: float,
+    center_x: float, center_y: float,   # of the quarter-chord point [cells]
+    alpha_deg: float = 0.0,
+) -> torch.Tensor:
+    """Rotate by -alpha about quarter-chord, scale, translate -> cell
+    coordinates. The ONE transform shared by the rasterizer and the
+    curved-boundary (Bouzidi) link fractions, so the wall the mask sees
+    and the wall the interpolation sees are the same wall."""
+    a = math.radians(-alpha_deg)      # +alpha pitches the nose UP
+    ca, sa = math.cos(a), math.sin(a)
+    p = poly - torch.tensor([0.25, 0.0])            # about quarter chord
+    rot = torch.stack([p[:, 0] * ca - p[:, 1] * sa,
+                       p[:, 0] * sa + p[:, 1] * ca], 1)
+    return rot * chord_cells + torch.tensor([center_x, center_y])
+
+
 def rasterize(
     poly: torch.Tensor,           # (N,2) unit-chord loop
     nx: int, ny: int,
@@ -70,12 +88,8 @@ def rasterize(
 ) -> torch.Tensor:
     """Rotate by -alpha about quarter-chord, scale, and rasterize to a
     boolean (nx,ny) mask via supersampled point-in-polygon."""
-    a = math.radians(-alpha_deg)      # +alpha pitches the nose UP
-    ca, sa = math.cos(a), math.sin(a)
-    p = poly - torch.tensor([0.25, 0.0])            # about quarter chord
-    rot = torch.stack([p[:, 0] * ca - p[:, 1] * sa,
-                       p[:, 0] * sa + p[:, 1] * ca], 1)
-    verts = rot * chord_cells + torch.tensor([center_x, center_y])
+    verts = transform_polygon(poly, chord_cells, center_x, center_y,
+                              alpha_deg)
 
     # bounding box in cells, padded
     x0 = max(int(verts[:, 0].min()) - 2, 0)

@@ -713,3 +713,72 @@ with different tests.
 
 **Footage:** the empty-glob validator exiting 0 (terminal), then the new
 pytest line `6 passed in 1.95s`; the three live screenshots.
+
+## 2026-07-18 — Phase 8: paying the accuracy debt (TRT + Bouzidi)
+
+The question "how can this be MORE accurate" has two honest answers
+with names on them, and both are now in the solver as OPT-IN scene
+keys (`collision: trt`, `obstacle.curved_bc: true`). The defaults are
+bit-identical to before — proven by running HEAD's solver and the new
+one side by side for 300 steps (plus 200 with SGS) and comparing every
+population bitwise. Zero divergence.
+
+**Fix 1 — the wall that moved (TRT).** With BGK, the effective no-slip
+plane of a halfway bounce-back wall DRIFTS with viscosity: fit a
+parabola to a converged forced channel and find its roots — at tau = 3
+the wall sits 0.2475 cells inside the solid. The two-relaxation-time
+operator keeps the BGK even rate (which alone sets the viscosity) and
+adds an odd rate SOLVED from the magic parameter Lambda = 3/16 — a
+value derived on paper (Ginzburg; Kruger sec. 10.6), not tuned. Same
+sweep with TRT: drift 0.0140 cells — 5.7% of BGK's, flat in tau.
+Study + figure: validation/accuracy_tau_sweep.py.
+
+Honest caveats, documented after chasing them for an afternoon:
+- In FORCE-driven channels a ~1% profile-amplitude artifact remains
+  (the Guo source + TRT interaction; the parity pairing is right — the
+  scanned alternatives are 40-80% wrong — but exactness would need
+  Ginzburg's bare-force convention end to end). Wind-tunnel scenes
+  carry no body force, so this does not touch them.
+- The magic value pins WALLS; it is not a general error eraser.
+
+**Fix 2 — the staircase (Bouzidi).** Every boundary link now can know
+where the true surface cuts it: analytic for the cylinder, segment
+intersection against the SAME transformed polygon the mask was
+rasterized from for airfoils (transform_polygon is shared — one wall,
+two consumers). Linear Bouzidi interpolation replaces the halfway
+reflection; s = 1/2 reduces to the old rule EXACTLY, and the suite
+proves it bitwise by forcing every coefficient to its s = 1/2 value.
+Probe misses (staircase-corner mask/geometry mismatches) fall back to
+halfway and are counted: 3-4% of links on a D=24 cylinder.
+
+**And a genuinely surprising find while re-running the gauntlet.** The
+Poiseuille gate read 0.1369% on CUDA — but NOTES records 0.082%. Panic,
+then bisection: the v0.2-validated TAG ITSELF gives 0.1369% on CUDA
+today... and 0.0819% on CPU. Same code, same parameters, both bitwise-
+converged. Cause: the Guo force increment (~1e-6) is ~15 ULP of the
+population values in fp32, so the converged fixed point is
+ARCHITECTURE-DEPENDENT at the 0.05% level — CPU and GPU rounding walk
+to different steady states, and the discretization error at H=64 is
+small enough for that to show. The 0.082% in the Phase 2 notes was a
+CPU number. Both pass the <1% gate; the records now say which chip.
+(Footage: the same file printing two different truths on two devices.)
+
+Suite: 77 tests (67 + 10 accuracy). Gauntlet re-run on GPU, all PASS:
+Poiseuille 0.1369% (CUDA; 0.0819% CPU — see above), Ghia u 0.45% /
+v 0.68%, cylinder St 0.1667 / Cd 1.4356 +/- 0.0076. Convergence study
+(staircase vs Bouzidi Cd across D = 24/32/44 at fixed Re = 100 and
+tau = 0.572): validation/cylinder_convergence.py.
+
+    D = 24  staircase Cd 1.4729   bouzidi Cd 1.4415  (232 links, 0 fallback)
+    D = 32  staircase Cd 1.4460   bouzidi Cd 1.4276  (312 links, 0 fallback)
+    D = 44  staircase Cd 1.4425   bouzidi Cd 1.4215  (424 links, 0 fallback)
+    Cd spread across resolution:  staircase 0.0304   bouzidi 0.0200
+
+The point is not that either curve is "right" (there is no exact Cd for
+a finite tunnel) — it is that the curved wall makes the answer depend
+LESS on how many cells you spent: Bouzidi's Cd spread across D is 0.0200
+vs the staircase's 0.0304 (34% less resolution-dependence). A staircase
+adds surface roughness that shrinks with the cell size, so its Cd is
+still chasing a moving target at D = 24; the interpolated wall is closer
+to converged at every resolution. PASS: curved boundary reduces the
+grid-dependence of the force. Figure: validation/cylinder_convergence.png.

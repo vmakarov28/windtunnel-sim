@@ -195,7 +195,40 @@ resolution: the lift *slope* is trustworthy (the MH45 campaign landed
 within 8% of thin-airfoil theory), drag reads high (staircase edges +
 a ~3-cell boundary layer), and near-stall angles are not to be trusted.
 
-## 7. Rendering presets
+## 7. Accuracy mode (when you can wait longer)
+
+Two opt-in scene keys buy measurably better physics at some speed cost
+(they run in the readable reference solver — skip `--solver fused`):
+
+```yaml
+collision: trt          # top-level: two-relaxation-time collision
+obstacle:
+  curved_bc: true       # Bouzidi interpolated walls (cylinder/airfoil)
+```
+
+- **`collision: trt`** fixes a subtle BGK artifact: the effective wall
+  position drifts with viscosity (0.25 cells at tau = 3). TRT adds a
+  second relaxation rate solved from the derived magic parameter
+  Λ = 3/16 and pins the wall (drift ÷ 17, measured:
+  `python validation/accuracy_tau_sweep.py`).
+- **`curved_bc: true`** replaces the staircase wall with interpolated
+  bounce-back: every boundary link uses the true distance to the
+  surface (analytic circle, or the same polygon the mask came from).
+  Setting that distance to ½ reproduces the old rule exactly — the
+  upgrade contains the original. This is the main answer to "the
+  airfoil is made of steps."
+- Both defaults stay off; all validation gates run the default path.
+  Grid-convergence comparison: `python validation/cylinder_convergence.py`.
+- Known limit (documented in notes/NOTES.md): in body-force-driven
+  channels TRT retains a ~1% profile-amplitude artifact. Wind-tunnel
+  scenes have no body force.
+
+The other accuracy lever is still resolution: raise `cells_per_char`
+and the errors shrink quadratically. "100% accurate" does not exist in
+CFD — but every error term here now has a name, a measurement, and a
+figure.
+
+## 8. Rendering presets
 
 | preset | the shot |
 |---|---|
@@ -206,7 +239,7 @@ a ~3-cell boundary layer), and near-stall angles are not to be trusted.
 
 All headless: frames are PNGs, no window needed.
 
-## 8. The 3D tunnel
+## 9. The 3D tunnel
 
 Same pattern, separate program — scenes in `scenes3d/` additionally
 need `span_chars` (spanwise depth in units of L):
@@ -224,7 +257,7 @@ volume render — vortex cores and braids). Output in `out3d/`. The same
 `obstacle:` blocks work; shapes are extruded across the span. Budget
 note: 3D grids are big — dry-run and check the GB line first.
 
-## 9. The browser toy
+## 10. The browser toy
 
 A qualitative, interactive version of the same kernel (no install):
 
@@ -238,7 +271,7 @@ wind speed and viscosity (= Reynolds number), vorticity/speed fields,
 tracers. It trades accuracy for interactivity — the validated numbers
 come from `run.py`, the intuition comes from here.
 
-## 10. Tips & troubleshooting
+## 11. Tips & troubleshooting
 
 - **"UnitError: tau = ... < 0.55"** → see §4. The scene, not the code.
 - **Run went unstable / NaN** → the run halts and saves state + seed +

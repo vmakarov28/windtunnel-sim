@@ -79,8 +79,11 @@ happens here on main in `lbm3d/`.
 - Phase 0.5 (3D pivot) + 0.75 (back to 2D): done — 3D lives on `3d-d3q19`.
 - Phase 1 (D2Q9 core): done — tag `v0.1-first-flow`, vortex street video.
 - Phase 2 (validation gauntlet): done — tag `v0.2-validated`. Poiseuille
-  0.082%, Ghia 0.67%, cylinder St 0.1667 / Cd 1.436. Re-run these three
-  (validation/*.py) after ANY change to the core or BCs — the sacred gate.
+  0.082% CPU / 0.1369% CUDA (same code+tag — the fp32 fixed point is
+  architecture-dependent because the Guo force increment is ~15 ULP;
+  NOTES 2026-07-18), Ghia 0.67%, cylinder St 0.1667 / Cd 1.436. Re-run
+  these three (validation/*.py) after ANY change to the core or BCs —
+  the sacred gate.
 - Phase 3 (cinematography): done — tag `v0.3-cinema`. Tracers/streaklines/
   dye/presets/camera in lbm/cinema.py; three clips.
 - Phase 4 (fused kernel): done — tag `v0.4-fused`. Triton, 10.8 GLUPS at
@@ -104,6 +107,18 @@ happens here on main in `lbm3d/`.
   checks inside the main pytest suite (Windows wgpu → D3D12). Verified
   live with pixels: vorticity + speed fields render, mouse-drawn
   obstacles shed wakes, GPU errors surface red in the status line.
+- Phase 8 (accuracy: TRT + Bouzidi): done — tag `v0.10-accuracy`. Two
+  OPT-IN scene keys, defaults proven bit-identical to pre-change HEAD:
+  `collision: trt` (second relaxation rate from the DERIVED magic
+  parameter Λ=3/16; wall drift at tau=3 falls 0.2475 → 0.0140 cells,
+  measured by validation/accuracy_tau_sweep.py) and
+  `obstacle.curved_bc: true` (Bouzidi interpolated walls against the
+  true circle/polygon — transform shared with the rasterizer; s=1/2
+  reduces to halfway bounce-back bitwise, tested). Known limit: ~1%
+  TRT amplitude artifact in body-force channels only (no body force in
+  tunnel scenes). Accuracy path = reference solver; fused stays
+  BGK/staircase. Grid-convergence study:
+  validation/cylinder_convergence.py. Suite: 77 (2D) tests.
 
 ## 3D status (lbm3d/, tag v0.8-3d-core)
 
