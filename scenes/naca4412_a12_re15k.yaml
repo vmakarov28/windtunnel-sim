@@ -1,0 +1,44 @@
+# NACA 4412 — 2x2 study cell (HIGH Re, HIGH alpha). See naca4412_a3_re3k
+# for the family header; ONLY velocity_ms and alpha_deg change across the
+# set. Accurate path: collision: trt + obstacle.curved_bc: true.
+name: naca4412_a12_re15k
+description: >
+  NACA 4412, chord 256 cells, Re = 15,000 (U = 2.25 m/s), alpha 12 deg.
+  High Re + high alpha: massive leading-edge separation and a broad
+  unsteady shedding wake — full stall on camera.
+
+physical:
+  char_length_m: 0.1        # chord c [m]
+  velocity_ms: 2.25         # freestream U [m/s]  ->  Re = 15,000
+  nu_m2s: 1.5e-5
+
+lattice:
+  cells_per_char: 256       # chord = 256 cells
+  u_lat: 0.05               # low: high-alpha suction peaks amplify local u
+
+domain:
+  length_chars: 8
+  height_chars: 5
+
+sgs: true
+collision: trt              # Phase 8: two-relaxation-time (pins the wall)
+
+boundaries:
+  inlet: equilibrium_ramp
+  outlet: pressure_sponge
+  top_bottom: periodic
+  ramp_steps: 2000
+  sponge_fraction: 0.08
+
+obstacle:
+  type: airfoil_dat
+  dat_file: assets/naca4412.dat
+  alpha_deg: 12.0
+  center_x_chars: 2.0
+  center_y_chars: 2.5
+  edge_supersample: 4
+  curved_bc: true           # Phase 8: Bouzidi interpolated walls
+
+render:
+  preset: vorticity
+  zoom: [1.0, 1.0, 6.0, 4.0]
