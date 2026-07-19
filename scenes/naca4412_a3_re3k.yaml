@@ -9,7 +9,9 @@
 name: naca4412_a3_re3k
 description: >
   NACA 4412, chord 256 cells, Re = 3,000 (U = 0.45 m/s), alpha 3 deg.
-  Low Re + low alpha: attached, thick laminar boundary layer, steady wake.
+  Low Re + low alpha: the boundary layer stays ATTACHED over the whole
+  airfoil; the merged wake is already unstable at this Re and rolls up
+  into a gentle laminar vortex street downstream.
 
 physical:
   char_length_m: 0.1        # chord c [m]

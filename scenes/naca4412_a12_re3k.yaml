@@ -4,8 +4,9 @@
 name: naca4412_a12_re3k
 description: >
   NACA 4412, chord 256 cells, Re = 3,000 (U = 0.45 m/s), alpha 12 deg.
-  Low Re + high alpha: the thick boundary layer separates early — a fat
-  recirculating wake, the low-Re face of stall.
+  Low Re + high alpha: the boundary layer separates ahead of the trailing
+  edge and sheds a strong, well-organized laminar vortex street — the
+  low-Re face of stall.
 
 physical:
   char_length_m: 0.1        # chord c [m]
