@@ -54,6 +54,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--solver", default="reference",
                         choices=["reference", "fused"],
                         help="reference = readable PyTorch; fused = Triton")
+    parser.add_argument("--measure-force", action="store_true",
+                        help="report lift & drag coefficients on the "
+                             "obstacle via momentum exchange (Kruger 5.51); "
+                             "writes forces.csv and a converged-tail summary")
     parser.add_argument("--list-scenes", action="store_true")
     args = parser.parse_args(argv)
 
@@ -89,6 +93,17 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  device     {solver.device}"
           + (" (IMPULSIVE START — no inlet ramp)" if args.no_ramp else ""))
 
+    # Lift & drag on the obstacle (momentum exchange). q_dyn = 1/2 rho U^2 c
+    # with rho ~ 1, U = u_char, and c = chord in cells (span = 1 in 2D), so
+    # Cd = F_x / q_dyn, Cl = F_y / q_dyn — the same nondimensionalization the
+    # airfoil sweep uses (scripts/airfoil_sweep.py).
+    force_samples: list[tuple[int, float, float]] = []
+    q_dyn = 0.5 * solver.u_char ** 2 * scene.units.cells
+    if args.measure_force:
+        if getattr(solver, "mask", None) is None:
+            parser.error("--measure-force needs an obstacle in the scene")
+        solver.measure_force = True
+
     render_cfg = scene.raw.get("render", {})
     preset = args.preset or render_cfg.get("preset", "vorticity")
     zoom = args.zoom or render_cfg.get("zoom")
@@ -113,6 +128,11 @@ def main(argv: list[str] | None = None) -> int:
     log = open(log_path, "a", encoding="utf-8")
     if log.tell() == 0:
         log.write("step,u_max,mass_drift\n")
+    force_log = None
+    if args.measure_force:
+        force_log = open(out / "forces.csv", "a", encoding="utf-8")
+        if force_log.tell() == 0:
+            force_log.write("step,cd,cl\n")
 
     if args.resume:
         solver.restore(args.resume)
@@ -135,6 +155,12 @@ def main(argv: list[str] | None = None) -> int:
                 log.flush()
                 if g["u_max"] > 0.3:
                     print(f"  WARNING step {n}: u_max = {g['u_max']:.3f}")
+                if force_log is not None and solver.last_force is not None:
+                    fx, fy = solver.last_force.tolist()
+                    cd, cl = fx / q_dyn, fy / q_dyn
+                    force_samples.append((n, cd, cl))
+                    force_log.write(f"{n},{cd:.6f},{cl:.6f}\n")
+                    force_log.flush()
             if args.frame_every and n % args.frame_every == 0:
                 text = None
                 if args.overlay_mlups:
@@ -159,9 +185,27 @@ def main(argv: list[str] | None = None) -> int:
 
     solver.checkpoint(out / "final.pt")
     log.close()
+    if force_log is not None:
+        force_log.close()
     dt_wall = time.perf_counter() - t0
     print(f"\ndone: {steps_done} steps, {frames.count} frames, "
           f"{cells * steps_done / dt_wall / 1e6:.1f} MLUPS sustained")
+    if args.measure_force and force_samples:
+        import statistics
+        last = force_samples[-1][0]
+        tail = [s for s in force_samples if s[0] >= 0.5 * last] or force_samples
+        cds = [s[1] for s in tail]
+        cls = [s[2] for s in tail]
+        cl_m = statistics.fmean(cls)
+        cd_m = statistics.fmean(cds)
+        cl_s = statistics.pstdev(cls) if len(cls) > 1 else 0.0
+        cd_s = statistics.pstdev(cds) if len(cds) > 1 else 0.0
+        print(f"force (momentum exchange, mean over converged tail of "
+              f"{len(tail)} samples):")
+        print(f"  Cl = {cl_m:+.4f} ± {cl_s:.4f}    "
+              f"Cd = {cd_m:+.4f} ± {cd_s:.4f}    "
+              f"L/D = {cl_m / cd_m:+.2f}")
+        print(f"  full history: {out / 'forces.csv'}")
     print(f"assemble: ffmpeg -framerate 60 -i {frames.dir}/frame_%06d.png "
           f"-c:v libx264 -pix_fmt yuv420p -crf 18 {out}/{scene.name}.mp4")
     return 0
