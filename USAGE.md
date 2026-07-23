@@ -133,7 +133,70 @@ obstacle:                   # see §6
 The `obstacle:` block above — diameter is always 1 characteristic
 length (that's what `cells_per_char` resolves), position in units of L.
 
-### Any airfoil (`.dat` file)
+### The one-command way: generate a whole airfoil scene from numbers
+
+**`scripts/make_airfoil_scene.py` is the easy path** — give it an airfoil,
+an angle, and a Reynolds number and it writes a complete, units-checked
+scene. It works out the wind speed from Re, turns the turbulence model on
+only if the resolution needs it, generates the NACA geometry if you don't
+already have it, and *refuses* physically un-simulable combinations the
+same way a hand-written scene would.
+
+```bash
+# NACA 4412 at Re = 30,000, 6 deg angle of attack, dye footage
+python scripts/make_airfoil_scene.py --naca 4412 --re 30000 --alpha 6 \
+       --preset dye
+
+# a symmetric section near stall, coarse and fast (fused solver)
+python scripts/make_airfoil_scene.py --naca 0012 --re 8000 --alpha 14 \
+       --chord-cells 200 --fast --name naca0012_stall
+
+# an airfoil you downloaded — any Selig .dat (UIUC / airfoiltools.com)
+python scripts/make_airfoil_scene.py --dat assets/ag16.dat --re 20000 \
+       --alpha 3
+```
+
+It ends by printing the resolved unit report and the exact three commands
+to run next (dry run → real run → assemble). The knobs:
+
+| flag | meaning | default |
+|---|---|---|
+| `--naca CODE` **or** `--dat FILE` | geometry: a 4-digit code (generated) or a Selig file | one required |
+| `--re` | Reynolds number — **this sets the wind speed** | required |
+| `--alpha` | angle of attack [deg] | 4 |
+| `--chord-cells` | cells across the chord — the resolution / accuracy dial | 256 |
+| `--u-lat` | lattice speed, ≤ 0.1 | 0.05 |
+| `--preset` | render style baked into the scene (see §8) | vorticity |
+| `--sgs auto\|on\|off` | Smagorinsky LES; `auto` = on **iff** tau needs it | auto |
+| `--fast` | omit the accurate keys so the fused solver can run it | off = accurate |
+| `--domain L H`, `--center CX CY`, `--zoom …` | tunnel size, placement, camera crop (chords) | 8×5, 2.0 2.5, auto |
+| `--nu`, `--chord-m`, `--name`, `--points`, `--force` | fluid, physical chord, filename, NACA density, overwrite | air, 0.1 m, auto |
+
+Three things worth understanding:
+
+- **Reynolds sets the speed, not you.** You give `--re`, and the tool
+  computes `velocity_ms = Re · nu / chord`. That is *why* experiments here
+  match Reynolds numbers instead of raw speeds — the project's first rule.
+  Want a different Re? change one number.
+- **`auto` SGS is honest.** The generator asks the units system whether the
+  bare `tau` clears the plain-BGK floor (0.55). If yes, SGS stays off; if
+  no, it enables Smagorinsky (floor 0.501) — and if even that fails, it
+  refuses. You never set `tau` or guess whether turbulence modelling is
+  needed.
+- **Accurate by default, `--fast` for speed.** Without `--fast` the scene
+  gets `collision: trt` + `curved_bc: true` and runs on the reference
+  solver (true curved walls; see §7). `--fast` drops those so the fused
+  Triton kernel (≈20× faster, staircase walls) can run it.
+
+**When it refuses:** e.g. `tau = 0.5008 is below the SGS floor…` means the
+Reynolds number is too high for the resolution. Raise `--chord-cells`, or
+`--u-lat` (up to 0.1). Nothing is written on a refusal — that's the units
+discipline, not a bug.
+
+### Any airfoil (`.dat` file), by hand
+
+If you'd rather write the scene yourself (or need a field the generator
+doesn't expose), the obstacle block is just:
 
 ```yaml
 obstacle:
@@ -143,6 +206,7 @@ obstacle:
   center_x_chars: 2.0       # leading edge region placement
   center_y_chars: 2.5
   edge_supersample: 4       # anti-staircase edge sampling — keep it
+  curved_bc: true           # optional: Bouzidi true-curve walls (§7)
 ```
 
 The loader reads **Selig format**: line 1 is the airfoil *name*, then
@@ -171,29 +235,48 @@ name line — everything the rasterizer wants.
 ### Worked example: NACA 4412 at Re = 20,000, start to finish
 
 ```bash
-# 1. geometry
-python scripts/make_naca.py 4412
+# 1. generate the scene (geometry + units + accuracy keys, all at once)
+python scripts/make_airfoil_scene.py --naca 4412 --re 20000 --alpha 4 \
+       --chord-cells 400 --preset dye --name naca4412_re20k_demo
 
-# 2. scene: copy the shipped one and edit, or use it as-is
-#    (scenes/naca4412_re20k.yaml — chord 400 cells, sgs: true, alpha 4 deg)
+# 2. dry run — confirm Re = 20000, the grid, and tau before burning GPU
+python run.py --scene naca4412_re20k_demo --seed 1 --steps 0
 
-# 3. dry run — expect Re = 20000, tau = 0.503, grid 3200 x 2000
-python run.py --scene naca4412_re20k --seed 1 --steps 0
+# 3. real run (GPU) — 60k steps of dye footage
+python run.py --scene naca4412_re20k_demo --seed 1 --steps 60000 \
+              --frame-every 100 --upscale 2
 
-# 4. real run (GPU) — 60k steps ~ 7 convective times of dye footage
-python run.py --scene naca4412_re20k --seed 1 --steps 60000 \
-              --solver fused --preset dye --frame-every 100 \
-              --zoom 1.0,1.5,4.5,3.5 --upscale 2
-
-# 5. assemble
-python scripts/make_video.py out/naca4412_re20k-seed1
+# 4. assemble
+python scripts/make_video.py out/naca4412_re20k_demo-seed1
 ```
 
-Change `alpha_deg` in the scene for other angles (or see
-`scripts/airfoil_sweep.py` for a whole polar). Honesty notes at this
-resolution: the lift *slope* is trustworthy (the MH45 campaign landed
-within 8% of thin-airfoil theory), drag reads high (staircase edges +
-a ~3-cell boundary layer), and near-stall angles are not to be trusted.
+To sweep angle of attack, generate one scene per angle (they differ only
+in `--alpha`), or see `scripts/airfoil_sweep.py` for a whole lift/drag
+polar in one run. Honesty notes at this resolution: the lift *slope* is
+trustworthy (the MH45 campaign landed within 8% of thin-airfoil theory),
+drag reads high (a ~3-cell boundary layer; less so with `curved_bc`),
+and near-stall angles are qualitative.
+
+### Measuring lift and drag
+
+Add `--measure-force` to any obstacle run and the tunnel reports the lift
+and drag coefficients on the body, computed by **momentum exchange** —
+it sums the momentum every population hands the wall as it bounces
+(Kruger eq. 5.51), with no pressure integration. The x-component is drag,
+the y-component is lift; both are divided by ½·ρ·U²·chord to get `Cd`,
+`Cl`:
+
+```bash
+python run.py --scene naca4412_re20k_demo --seed 1 --steps 60000 \
+              --measure-force
+# ... writes out/<scene>-seed1/forces.csv (step,cd,cl) and prints:
+#   Cl = +0.42 ± 0.03    Cd = +0.09 ± 0.00    L/D = +4.7
+```
+
+The mean is over the converged tail; the ± is the unsteady amplitude
+(vortex-shedding buffet). The **trend** of `Cl` with angle and Reynolds
+number is reliable; the absolute magnitude is approximate at these
+resolutions (see the honesty notes above).
 
 ## 7. Accuracy mode (when you can wait longer)
 
@@ -228,16 +311,75 @@ and the errors shrink quadratically. "100% accurate" does not exist in
 CFD — but every error term here now has a name, a measurement, and a
 figure.
 
-## 8. Rendering presets
+## 8. Rendering: the presets and how to choose
 
-| preset | the shot |
+Every run writes PNG frames (headless — no window). What those frames
+*show* is the preset. There are four:
+
+| preset | the shot | colormap | how it's built |
+|---|---|---|---|
+| `vorticity` | red/blue spin field — the classic wake picture (**default**) | RdBu | computed from the velocity field at each frame |
+| `speed` | velocity magnitude; vortex cores read as dark holes | magma | computed from the velocity field at each frame |
+| `dye` | continuum dye/smoke advected from an upstream band — the prettiest | bone | a scalar advected **during the run** |
+| `streaklines` | particle streaks, the wind-tunnel-photo look | afmhot | tracer particles advected **during the run** |
+
+**The one thing that trips people up:** `vorticity` and `speed` are
+*derived* from the flow — they can be produced from any saved state. But
+`dye` and `streaklines` are *carried along as the simulation runs* (dye
+is a scalar field advected every step; streaklines are hundreds of
+thousands of particles). **You must pick them before the run** — you
+can't re-render an old vorticity run as dye. If you want both looks, do
+two runs (or one of each preset).
+
+### Choosing a preset — two ways, with precedence
+
+1. **Bake it into the scene** (reproducible default):
+   ```yaml
+   render:
+     preset: dye
+     zoom: [1.0, 1.0, 6.0, 4.0]     # camera crop, in chords
+   ```
+2. **Override at run time** (the flag wins over the scene):
+   ```bash
+   python run.py --scene my_airfoil --seed 1 --steps 60000 --preset speed
+   ```
+
+`--preset` on the command line always beats `render.preset` in the
+scene; if neither is set, you get `vorticity`.
+
+### The rest of the render controls
+
+| flag | what it does |
 |---|---|
-| `vorticity` | red/blue spin field — the classic wake picture (default) |
-| `speed` | velocity magnitude, vortex cores as dark holes |
-| `dye` | continuum dye advection — the prettiest one |
-| `streaklines` | particle streaks, wind-tunnel-photo look |
+| `--preset X` | style (above) |
+| `--zoom x0,y0,x1,y1` | camera crop in characteristic lengths (chords/diameters) |
+| `--upscale N` | integer pixel upscale — sharper output frames |
+| `--frame-every N` | render cadence: one frame every N steps = your footage frame rate |
+| `--tracers N` | particle count for `streaklines` (default 300k) |
+| `--overlay-mlups` | burn a live MLUPS/step counter into the frame |
+| `--measure-force` | also log lift & drag (see §6) — independent of the preset |
 
-All headless: frames are PNGs, no window needed.
+Then assemble the PNGs into an MP4 (bundled ffmpeg, no install):
+
+```bash
+python scripts/make_video.py out/<scene>-seed<seed>        # 60 fps H.264
+```
+
+### How to render vs how to *simulate* — the solver is separate
+
+The preset is only how the flow is *drawn*; `--solver` is how it's
+*computed*, and the two are independent:
+
+- `--solver reference` (default) — the readable PyTorch solver; the only
+  one that honours the accuracy keys `collision: trt` and `curved_bc`
+  (§7). Use it for accurate airfoil walls.
+- `--solver fused` — the Triton kernel, ≈20× faster, but BGK + staircase
+  walls (it ignores the accuracy keys). Use it for big/long runs where
+  speed matters more than the last percent.
+
+Any preset works with either solver. A scene made with `--fast` has the
+accuracy keys omitted, so `--solver fused` is the natural match; an
+accurate scene runs on the default reference solver.
 
 ## 9. The 3D tunnel
 

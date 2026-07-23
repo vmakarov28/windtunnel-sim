@@ -21,9 +21,10 @@ copied.
 ## Running
 
 **New here? [USAGE.md](USAGE.md) is the practical guide** — setup, your
-first run, custom shapes (including a worked NACA 4412 example with any
-`.dat` airfoil or the `scripts/make_naca.py` generator), rendering
-presets, the 3D tunnel, the browser toy, and troubleshooting.
+first run, custom shapes (generate a whole airfoil scene from numbers with
+`scripts/make_airfoil_scene.py --naca 4412 --re 30000 --alpha 6`, or bring
+any Selig `.dat`), measuring lift & drag, choosing rendering presets, the
+3D tunnel, the browser toy, and troubleshooting.
 
 Every experiment is a scene config plus a seed — nothing else:
 
@@ -55,7 +56,9 @@ colored by streamwise vorticity — the vortex-core shot).
 - `lbm3d/` — 3D core: D3Q19 `solver.py` (BGK + Guo + Smagorinsky + moving
   lid + momentum exchange), `render.py` (slice / three_pane / qcrit)
 - `scenes/`, `scenes3d/` — experiment configs, physical-units-first
-- `scripts/` — run/benchmark/render/sweep tooling (2D and 3D)
+- `scripts/` — run/benchmark/render/sweep tooling (2D and 3D), plus scene
+  generators: `make_airfoil_scene.py` (airfoil scene from NACA code / Re /
+  alpha) and `make_naca.py` (just the `.dat` geometry)
 - `validation/` — benchmark gauntlet + airfoil polars, publication figures
 - `notes/NOTES.md` — dev diary: every bug, instability, and diagnosis,
   dated (it doubles as the video script)
