@@ -1,3 +1,4 @@
+<img width="2000" height="1200" alt="frame_000300" src="https://github.com/user-attachments/assets/601923c8-ad92-4498-8b51-d664779d5fce" />
 # windtunnel-sim
 
 A GPU lattice-Boltzmann wind tunnel built from scratch for a dev-log
