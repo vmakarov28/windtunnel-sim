@@ -1,4 +1,3 @@
-<img width="2000" height="1200" alt="frame_000300" src="https://github.com/user-attachments/assets/601923c8-ad92-4498-8b51-d664779d5fce" />
 # windtunnel-sim
 
 A GPU lattice-Boltzmann wind tunnel built from scratch for a dev-log
@@ -18,6 +17,8 @@ Poiseuille/Ghia/cylinder benchmarks and XFOIL/OpenFOAM data) and constant
 visual output. Architecture ideas referenced from
 [LB-t](https://github.com/2b-t/LB-t) by Tobit Flatscher (MIT) — no code
 copied.
+
+https://github.com/user-attachments/assets/01c18f8d-a5f9-4124-86a6-737955d6512d
 
 ## Running
 
